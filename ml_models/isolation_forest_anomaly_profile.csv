@@ -1,0 +1,15 @@
+feature,mean_anomalous,mean_normal,median_anomalous,median_normal
+age,67.2414,60.8495,68.0,66.0
+average_claim_cost,138320.066,7033.4675,81556.835,3161.1
+chronic_condition_count,0.0,0.0,0.0,0.0
+cost_per_recorded_visit,138320.0661,7033.4675,81556.8354,3161.1041
+dual_eligibility_months,0.0,0.0,0.0,0.0
+inpatient_total_cost,2737942.2841,37030.3245,1148083.435,1963.29
+inpatient_visit_count,19.9138,2.0463,4.0,1.0
+inpatient_visit_share,0.2883,0.0938,0.2183,0.0556
+outpatient_total_cost,750025.0953,145215.4729,214274.6,31934.55
+outpatient_visit_count,165.2069,43.9854,29.0,11.0
+provider_count,2.6437,1.9523,3.0,2.0
+provider_fragmentation_ratio,0.1629,0.1909,0.0707,0.1333
+recorded_visit_count,185.1207,46.0317,39.0,13.0
+total_claim_payment_amount,3487967.3794,182245.7974,1488822.035,54402.3

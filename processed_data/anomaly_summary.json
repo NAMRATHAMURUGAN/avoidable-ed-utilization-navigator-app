@@ -1,0 +1,101 @@
+{
+  "model_purpose": "Unsupervised detection of unusual healthcare utilization patterns within the observed data.",
+  "generated_at": "2026-08-13T08:43:15Z",
+  "total_members": 8671,
+  "number_of_anomalies": 174,
+  "anomaly_percentage": 2.0066889632107023,
+  "utilization_anomaly_score_distribution": {
+    "p00": 0.3546799007645656,
+    "p01": 0.35706895935347643,
+    "p05": 0.3598302804757989,
+    "p25": 0.3712767328555717,
+    "p50": 0.39284638945294764,
+    "p75": 0.4398361647414226,
+    "p95": 0.5505373301045553,
+    "p99": 0.638373555771168,
+    "p100": 0.777398507063112
+  },
+  "contamination_experiments": [
+    {
+      "contamination": 0.01,
+      "anomaly_count": 87,
+      "anomaly_percentage": 1.0033444816053512,
+      "raw_score_distribution": {
+        "p00": -0.777398507063112,
+        "p01": -0.638373555771168,
+        "p05": -0.5505373301045553,
+        "p25": -0.4398361647414226,
+        "p50": -0.39284638945294764,
+        "p75": -0.3712767328555717,
+        "p95": -0.3598302804757989,
+        "p99": -0.35706895935347643,
+        "p100": -0.3546799007645656
+      }
+    },
+    {
+      "contamination": 0.02,
+      "anomaly_count": 174,
+      "anomaly_percentage": 2.0066889632107023,
+      "raw_score_distribution": {
+        "p00": -0.777398507063112,
+        "p01": -0.638373555771168,
+        "p05": -0.5505373301045553,
+        "p25": -0.4398361647414226,
+        "p50": -0.39284638945294764,
+        "p75": -0.3712767328555717,
+        "p95": -0.3598302804757989,
+        "p99": -0.35706895935347643,
+        "p100": -0.3546799007645656
+      }
+    },
+    {
+      "contamination": 0.05,
+      "anomaly_count": 434,
+      "anomaly_percentage": 5.0051897128358895,
+      "raw_score_distribution": {
+        "p00": -0.777398507063112,
+        "p01": -0.638373555771168,
+        "p05": -0.5505373301045553,
+        "p25": -0.4398361647414226,
+        "p50": -0.39284638945294764,
+        "p75": -0.3712767328555717,
+        "p95": -0.3598302804757989,
+        "p99": -0.35706895935347643,
+        "p100": -0.3546799007645656
+      }
+    },
+    {
+      "contamination": 0.1,
+      "anomaly_count": 867,
+      "anomaly_percentage": 9.998846730480913,
+      "raw_score_distribution": {
+        "p00": -0.777398507063112,
+        "p01": -0.638373555771168,
+        "p05": -0.5505373301045553,
+        "p25": -0.4398361647414226,
+        "p50": -0.39284638945294764,
+        "p75": -0.3712767328555717,
+        "p95": -0.3598302804757989,
+        "p99": -0.35706895935347643,
+        "p100": -0.3546799007645656
+      }
+    }
+  ],
+  "selected_configuration": {
+    "n_estimators": 300,
+    "contamination": 0.02,
+    "n_jobs": 1
+  },
+  "xgboost_post_hoc_overlap_counts": {
+    "high_utilization_and_anomaly": 55,
+    "high_utilization_no_anomaly": 827,
+    "low_utilization_and_anomaly": 119,
+    "low_utilization_no_anomaly": 7670
+  },
+  "temporal_analysis": {
+    "temporal_results_created": false,
+    "available_claim_files": [],
+    "reason": "No cleaned inpatient/outpatient claim files are available for date validation. The member-level feature file is aggregated and cannot support actual anomaly start/end dates."
+  },
+  "limitation": "An anomaly is not evidence of medical necessity, clinical deterioration, inappropriate ED use, or ED avoidability."
+}

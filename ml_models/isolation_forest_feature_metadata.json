@@ -1,0 +1,45 @@
+{
+  "model_version": "isolation-forest-utilization-v1",
+  "model_type": "sklearn.ensemble.IsolationForest",
+  "random_state": 42,
+  "selected_configuration": {
+    "n_estimators": 300,
+    "contamination": 0.02,
+    "n_jobs": 1
+  },
+  "selection_rationale": "A conservative 2% review cohort was selected without optimizing against any label. The 1% option was reserved for only the most extreme observations, while 5% and 10% would broaden the review cohort substantially. This is an operational, non-clinical threshold choice rather than evidence of anomaly prevalence.",
+  "training_feature_columns": [
+    "age",
+    "gender",
+    "dual_eligibility_months",
+    "chronic_condition_count",
+    "inpatient_visit_count",
+    "inpatient_total_cost",
+    "outpatient_visit_count",
+    "outpatient_total_cost",
+    "total_claim_payment_amount",
+    "average_claim_cost",
+    "provider_count",
+    "recorded_visit_count",
+    "cost_per_recorded_visit",
+    "provider_fragmentation_ratio",
+    "inpatient_visit_share"
+  ],
+  "categorical_features_one_hot_encoded": [
+    "gender"
+  ],
+  "excluded_columns_for_leakage_prevention": [
+    "BENE_ID",
+    "ed_visit_count",
+    "high_utilization_pattern",
+    "total_ed_related_cost"
+  ],
+  "engineered_feature_formulas": {
+    "recorded_visit_count": "inpatient_visit_count + outpatient_visit_count",
+    "cost_per_recorded_visit": "total_claim_payment_amount / max(inpatient_visit_count + outpatient_visit_count, 1)",
+    "provider_fragmentation_ratio": "provider_count / max(inpatient_visit_count + outpatient_visit_count, 1)",
+    "inpatient_visit_share": "inpatient_visit_count / max(inpatient_visit_count + outpatient_visit_count, 1)"
+  },
+  "score_interpretation": "Higher utilization anomaly score means the observed member-level pattern was more unusual to this fitted Isolation Forest. It is not a probability, clinical risk score, or determination of ED avoidability.",
+  "feature_importance": "Isolation Forest does not provide native feature_importances_. Use isolation_forest_anomaly_profile.csv for descriptive normal-versus-anomalous feature profiles."
+}
