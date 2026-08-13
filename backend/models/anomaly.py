@@ -68,6 +68,10 @@ class UtilizationAnomalyResult(Base):
 
     member: Mapped["Member"] = relationship(back_populates="anomaly_results")
     utilization_snapshot: Mapped["MemberUtilizationSnapshot"] = relationship(
-        back_populates="anomaly_results"
+        back_populates="anomaly_results",
+        # The composite FK also includes member_id to enforce that this
+        # snapshot belongs to ``member``.  Keep this relationship read-only so
+        # SQLAlchemy has one unambiguous writer for member_id.
+        viewonly=True,
     )
     model_run: Mapped["ModelRun"] = relationship(back_populates="anomaly_results")

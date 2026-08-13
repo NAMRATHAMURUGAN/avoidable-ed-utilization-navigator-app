@@ -60,8 +60,14 @@ class MemberUtilizationSnapshot(Base):
 
     member: Mapped["Member"] = relationship(back_populates="utilization_snapshots")
     xgboost_predictions: Mapped[list["XGBoostUtilizationPrediction"]] = relationship(
-        back_populates="utilization_snapshot"
+        back_populates="utilization_snapshot",
+        # ``member_id`` is intentionally part of the composite FK below, but
+        # is owned for writes by XGBoostUtilizationPrediction.member.  This
+        # relationship is a consistency-checked navigation path only.
+        viewonly=True,
     )
     anomaly_results: Mapped[list["UtilizationAnomalyResult"]] = relationship(
-        back_populates="utilization_snapshot"
+        back_populates="utilization_snapshot",
+        # See the corresponding XGBoost relationship above.
+        viewonly=True,
     )

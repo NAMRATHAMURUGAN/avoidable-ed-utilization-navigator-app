@@ -80,6 +80,10 @@ class XGBoostUtilizationPrediction(Base):
 
     member: Mapped["Member"] = relationship(back_populates="xgboost_predictions")
     utilization_snapshot: Mapped["MemberUtilizationSnapshot"] = relationship(
-        back_populates="xgboost_predictions"
+        back_populates="xgboost_predictions",
+        # The composite FK also includes member_id to enforce that this
+        # snapshot belongs to ``member``.  Keep this relationship read-only so
+        # SQLAlchemy has one unambiguous writer for member_id.
+        viewonly=True,
     )
     model_run: Mapped["ModelRun"] = relationship(back_populates="xgboost_predictions")
