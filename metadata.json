@@ -1,0 +1,6 @@
+{
+  "name": "Avoidable ED Utilization Navigator",
+  "description": "Care management platform spotting patterns of avoidable emergency department visits, stratifying risk, and guiding patients to lower-acuity care options safely.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,22 @@
+{
+  "model_name": "Baseline XGBoost",
+  "model_purpose": "Historical utilization-pattern prioritization for proactive care navigation; not an emergency-necessity determination.",
+  "target_definition": "high_utilization_pattern = ed_visit_count at or above the 90th percentile cutoff",
+  "ed_visit_count_cutoff": 9.0,
+  "excluded_from_training_for_leakage": [
+    "BENE_ID",
+    "ed_visit_count",
+    "total_ed_related_cost"
+  ],
+  "test_metrics": {
+    "accuracy": 0.930835734870317,
+    "precision": 0.6076923076923076,
+    "recall": 0.8977272727272727,
+    "f1_score": 0.7247706422018348,
+    "roc_auc": 0.9760846113476004,
+    "confusion_matrix": [
+      [1457, 102],
+      [18, 158]
+    ]
+  }
+}

@@ -1,0 +1,561 @@
+import { PatientProfile, ProviderAlternative, PopulationAnalytics } from '../types';
+
+export const MOCK_PATIENTS: PatientProfile[] = [
+  {
+    id: 'pt-101',
+    beneficiaryId: 'CMS-A894-201',
+    name: 'Margaret Vance',
+    age: 72,
+    gender: 'Female',
+    zipCode: '60614',
+    medicareType: 'Part A & B (FFS)',
+    primaryCareProvider: 'Dr. Robert Chen, MD (Lincoln Park Medical)',
+    lastPcpVisitDate: '2025-09-14',
+    chronicConditions: ['COPD (Mild-Moderate)', 'Hypertension', 'Osteoarthritis'],
+    sdohBarriers: ['Lack of Evening/Weekend PCP Hours', 'Pharmacy Non-Adherence', 'Live Alone'],
+    edVisitCount12m: 5,
+    avoidableEdCount12m: 4,
+    totalEdSpend12m: 8950,
+    avoidableEdSpend12m: 7200,
+    riskLevel: 'HIGH',
+    claimsHistory: [
+      {
+        id: 'clm-801',
+        claimDate: '2026-06-12',
+        facilityName: 'Northwestern Memorial ER',
+        chiefComplaint: 'Mild COPD wheezing & prescription refill needed',
+        primaryIcd10: 'J44.1',
+        diagnosisDescription: 'Chronic obstructive pulmonary disease with acute exacerbation (mild)',
+        nyuCategory: 'EMERGENT_PREVENTABLE',
+        totalCost: 1850,
+        avoidableCostEstimate: 1650,
+        timeOfDay: 'NIGHT_AFTER_HOURS',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-802',
+        claimDate: '2026-04-03',
+        facilityName: 'St. Joseph Hospital ER',
+        chiefComplaint: 'Coughing and shortness of breath (after PCP office closed)',
+        primaryIcd10: 'J44.9',
+        diagnosisDescription: 'Chronic obstructive pulmonary disease, unspecified',
+        nyuCategory: 'EMERGENT_PRIMARY_CARE_TREATABLE',
+        totalCost: 1720,
+        avoidableCostEstimate: 1520,
+        timeOfDay: 'EVENING',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'URGENT_CARE'
+      },
+      {
+        id: 'clm-803',
+        claimDate: '2026-01-18',
+        facilityName: 'Northwestern Memorial ER',
+        chiefComplaint: 'Blood pressure spike (158/92) - worried',
+        primaryIcd10: 'I10',
+        diagnosisDescription: 'Essential (primary) hypertension',
+        nyuCategory: 'EMERGENT_PREVENTABLE',
+        totalCost: 1950,
+        avoidableCostEstimate: 1800,
+        timeOfDay: 'NIGHT_AFTER_HOURS',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-804',
+        claimDate: '2025-11-05',
+        facilityName: 'Illinois Masonic Medical ER',
+        chiefComplaint: 'Mild joint pain and request for inhaler refill',
+        primaryIcd10: 'M19.90',
+        diagnosisDescription: 'Unspecified osteoarthritis, unspecified site',
+        nyuCategory: 'NON_EMERGENT',
+        totalCost: 1680,
+        avoidableCostEstimate: 1580,
+        timeOfDay: 'AFTERNOON',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'RETAIL_CLINIC'
+      },
+      {
+        id: 'clm-805',
+        claimDate: '2025-08-22',
+        facilityName: 'Northwestern Memorial ER',
+        chiefComplaint: 'Severe shortness of breath & chest tightness',
+        primaryIcd10: 'J44.0',
+        diagnosisDescription: 'COPD with acute lower respiratory infection',
+        nyuCategory: 'EMERGENT_ED_NEEDED',
+        totalCost: 1750,
+        avoidableCostEstimate: 0,
+        timeOfDay: 'MORNING',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: true,
+        alternativeRecommended: 'EMERGENCY'
+      }
+    ],
+    assignedCareManager: 'Sarah Jenkins, RN'
+  },
+  {
+    id: 'pt-102',
+    beneficiaryId: 'CMS-B412-990',
+    name: 'Arthur Pendelton',
+    age: 68,
+    gender: 'Male',
+    zipCode: '60622',
+    medicareType: 'Part A & B (FFS)',
+    primaryCareProvider: 'Dr. Maria Santos, MD (West Town Health)',
+    lastPcpVisitDate: '2025-04-10',
+    chronicConditions: ['Type 2 Diabetes', 'Hypertension', 'Hyperlipidemia'],
+    sdohBarriers: ['Transportation Deficit', 'Low Health Literacy', 'Financial Hardship'],
+    edVisitCount12m: 4,
+    avoidableEdCount12m: 3,
+    totalEdSpend12m: 7400,
+    avoidableEdSpend12m: 5800,
+    riskLevel: 'HIGH',
+    claimsHistory: [
+      {
+        id: 'clm-810',
+        claimDate: '2026-05-29',
+        facilityName: 'Rush University Medical Center ER',
+        chiefComplaint: 'Hyperglycemia (blood sugar 290 mg/dL) after missing insulin',
+        primaryIcd10: 'E11.65',
+        diagnosisDescription: 'Type 2 diabetes mellitus with hyperglycemia',
+        nyuCategory: 'EMERGENT_PREVENTABLE',
+        totalCost: 2100,
+        avoidableCostEstimate: 1900,
+        timeOfDay: 'EVENING',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-811',
+        claimDate: '2026-02-14',
+        facilityName: 'St. Anthony Hospital ER',
+        chiefComplaint: 'Foot numbness & minor abrasion check',
+        primaryIcd10: 'E11.40',
+        diagnosisDescription: 'Type 2 diabetes mellitus with diabetic neuropathy',
+        nyuCategory: 'NON_EMERGENT',
+        totalCost: 1450,
+        avoidableCostEstimate: 1350,
+        timeOfDay: 'MORNING',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'PRIMARY_CARE'
+      },
+      {
+        id: 'clm-812',
+        claimDate: '2025-10-30',
+        facilityName: 'Rush University Medical Center ER',
+        chiefComplaint: 'High blood pressure reading at home',
+        primaryIcd10: 'I10',
+        diagnosisDescription: 'Essential (primary) hypertension',
+        nyuCategory: 'EMERGENT_PREVENTABLE',
+        totalCost: 1850,
+        avoidableCostEstimate: 1700,
+        timeOfDay: 'NIGHT_AFTER_HOURS',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-813',
+        claimDate: '2025-07-12',
+        facilityName: 'Cook County Stroger ER',
+        chiefComplaint: 'Sudden severe dizziness & syncope episode',
+        primaryIcd10: 'R42',
+        diagnosisDescription: 'Dizziness and giddiness',
+        nyuCategory: 'EMERGENT_ED_NEEDED',
+        totalCost: 2000,
+        avoidableCostEstimate: 0,
+        timeOfDay: 'AFTERNOON',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'EMERGENCY'
+      }
+    ],
+    assignedCareManager: 'David Ross, LCSW'
+  },
+  {
+    id: 'pt-103',
+    beneficiaryId: 'CMS-C902-114',
+    name: 'Eleanor Vance-Guzman',
+    age: 79,
+    gender: 'Female',
+    zipCode: '60618',
+    medicareType: 'Medicare Advantage',
+    primaryCareProvider: 'Dr. James Mitchell, MD (Avondale Senior Care)',
+    lastPcpVisitDate: '2026-05-02',
+    chronicConditions: ['Congestive Heart Failure (Stage II)', 'Hypertension', 'Chronic Kidney Disease'],
+    sdohBarriers: ['Caregiver Burnout', 'Multiple Medication Confusion'],
+    edVisitCount12m: 3,
+    avoidableEdCount12m: 2,
+    totalEdSpend12m: 6200,
+    avoidableEdSpend12m: 4100,
+    riskLevel: 'MODERATE',
+    claimsHistory: [
+      {
+        id: 'clm-820',
+        claimDate: '2026-07-04',
+        facilityName: 'Swedish Covenant ER',
+        chiefComplaint: 'Mild ankle swelling & 3 lb weight gain',
+        primaryIcd10: 'I50.9',
+        diagnosisDescription: 'Heart failure, unspecified',
+        nyuCategory: 'EMERGENT_PREVENTABLE',
+        totalCost: 2200,
+        avoidableCostEstimate: 1950,
+        timeOfDay: 'EVENING',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-821',
+        claimDate: '2026-03-22',
+        facilityName: 'Swedish Covenant ER',
+        chiefComplaint: 'Mild urinary discomfort & frequency',
+        primaryIcd10: 'N39.0',
+        diagnosisDescription: 'Urinary tract infection, site not specified',
+        nyuCategory: 'EMERGENT_PRIMARY_CARE_TREATABLE',
+        totalCost: 1750,
+        avoidableCostEstimate: 1550,
+        timeOfDay: 'AFTERNOON',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'URGENT_CARE'
+      },
+      {
+        id: 'clm-822',
+        claimDate: '2025-11-19',
+        facilityName: 'Swedish Covenant ER',
+        chiefComplaint: 'Acute chest tightness and orthopnea',
+        primaryIcd10: 'I50.21',
+        diagnosisDescription: 'Acute systolic (congestive) heart failure',
+        nyuCategory: 'EMERGENT_ED_NEEDED',
+        totalCost: 2250,
+        avoidableCostEstimate: 0,
+        timeOfDay: 'NIGHT_AFTER_HOURS',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: true,
+        alternativeRecommended: 'EMERGENCY'
+      }
+    ],
+    assignedCareManager: 'Sarah Jenkins, RN'
+  },
+  {
+    id: 'pt-104',
+    beneficiaryId: 'CMS-D119-304',
+    name: 'Samuel O\'Connor',
+    age: 66,
+    gender: 'Male',
+    zipCode: '60647',
+    medicareType: 'Part A & B (FFS)',
+    primaryCareProvider: 'Dr. Anita Patel, MD (Logan Square Health)',
+    lastPcpVisitDate: '2025-01-15',
+    chronicConditions: ['Asthma', 'Allergic Rhinitis'],
+    sdohBarriers: ['Unemployed / Low Income', 'Unsure where to go after 5 PM'],
+    edVisitCount12m: 3,
+    avoidableEdCount12m: 3,
+    totalEdSpend12m: 4900,
+    avoidableEdSpend12m: 4900,
+    riskLevel: 'MODERATE',
+    claimsHistory: [
+      {
+        id: 'clm-830',
+        claimDate: '2026-06-20',
+        facilityName: 'St. Mary of Nazareth ER',
+        chiefComplaint: 'Seasonal asthma flare & itchy eyes',
+        primaryIcd10: 'J45.901',
+        diagnosisDescription: 'Unspecified asthma with (acute) exacerbation',
+        nyuCategory: 'EMERGENT_PRIMARY_CARE_TREATABLE',
+        totalCost: 1650,
+        avoidableCostEstimate: 1500,
+        timeOfDay: 'NIGHT_AFTER_HOURS',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'URGENT_CARE'
+      },
+      {
+        id: 'clm-831',
+        claimDate: '2026-03-01',
+        facilityName: 'St. Mary of Nazareth ER',
+        chiefComplaint: 'Refill needed for albuterol rescue inhaler',
+        primaryIcd10: 'Z76.0',
+        diagnosisDescription: 'Encounter for issue of repeat prescription',
+        nyuCategory: 'NON_EMERGENT',
+        totalCost: 1550,
+        avoidableCostEstimate: 1450,
+        timeOfDay: 'EVENING',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'TELEHEALTH'
+      },
+      {
+        id: 'clm-832',
+        claimDate: '2025-09-12',
+        facilityName: 'Humboldt Park ER',
+        chiefComplaint: 'Minor finger cut while cooking (no stitches needed)',
+        primaryIcd10: 'S61.209A',
+        diagnosisDescription: 'Laceration of finger without nail damage',
+        nyuCategory: 'NON_EMERGENT',
+        totalCost: 1700,
+        avoidableCostEstimate: 1550,
+        timeOfDay: 'AFTERNOON',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'URGENT_CARE'
+      }
+    ]
+  },
+  {
+    id: 'pt-105',
+    beneficiaryId: 'CMS-E773-810',
+    name: 'Rosa Maria Delgado',
+    age: 71,
+    gender: 'Female',
+    zipCode: '60608',
+    medicareType: 'Part A & B (FFS)',
+    primaryCareProvider: 'Dr. Alejandro Gomez, MD (Pilsen Community Health)',
+    lastPcpVisitDate: '2026-03-10',
+    chronicConditions: ['Type 2 Diabetes', 'Depression'],
+    sdohBarriers: ['Language Access (Spanish Preferred)', 'Lack of Digital Access'],
+    edVisitCount12m: 2,
+    avoidableEdCount12m: 2,
+    totalEdSpend12m: 3400,
+    avoidableEdSpend12m: 3200,
+    riskLevel: 'LOW',
+    claimsHistory: [
+      {
+        id: 'clm-840',
+        claimDate: '2026-05-18',
+        facilityName: 'UI Health ER',
+        chiefComplaint: 'Sore throat & low-grade fever (99.8°F)',
+        primaryIcd10: 'J02.9',
+        diagnosisDescription: 'Acute pharyngitis, unspecified',
+        nyuCategory: 'NON_EMERGENT',
+        totalCost: 1600,
+        avoidableCostEstimate: 1500,
+        timeOfDay: 'EVENING',
+        dayOfWeek: 'WEEKDAY',
+        wasAdmitted: false,
+        alternativeRecommended: 'RETAIL_CLINIC'
+      },
+      {
+        id: 'clm-841',
+        claimDate: '2025-12-01',
+        facilityName: 'UI Health ER',
+        chiefComplaint: 'Mild lower back ache after lifting groceries',
+        primaryIcd10: 'M54.50',
+        diagnosisDescription: 'Low back pain, unspecified',
+        nyuCategory: 'EMERGENT_PRIMARY_CARE_TREATABLE',
+        totalCost: 1800,
+        avoidableCostEstimate: 1700,
+        timeOfDay: 'MORNING',
+        dayOfWeek: 'WEEKEND',
+        wasAdmitted: false,
+        alternativeRecommended: 'URGENT_CARE'
+      }
+    ]
+  }
+];
+
+export const MOCK_PROVIDERS: ProviderAlternative[] = [
+  {
+    id: 'prov-01',
+    name: '24/7 Medicare Telehealth Nurse Line & Video Care',
+    type: 'TELEHEALTH',
+    address: 'On-Demand Virtual Care (Phone & Video)',
+    cityStateZip: 'Available Statewide',
+    distanceMiles: 0,
+    isOpen247: true,
+    operatingHours: '24 Hours / 7 Days a Week',
+    currentWaitTimeMins: 8,
+    copayAmount: 0,
+    averageTotalCost: 45,
+    phone: '1-800-555-CARE',
+    telehealthUrl: 'https://telehealth.medicare-navigator.org',
+    acceptsMedicare: true,
+    services: [
+      'Same-Day Prescription Refills',
+      'COPD & Asthma Flare Guidance',
+      'Blood Pressure & Sugar Checks',
+      'Rashes, Cold & Sore Throat',
+      '24/7 Registered Nurse Triage'
+    ]
+  },
+  {
+    id: 'prov-02',
+    name: 'Physicians Immediate Care - Lincoln Park Urgent Care',
+    type: 'URGENT_CARE',
+    address: '2282 N Lincoln Ave',
+    cityStateZip: 'Chicago, IL 60614',
+    distanceMiles: 1.2,
+    isOpen247: false,
+    operatingHours: 'Mon-Fri 7:30 AM - 8:00 PM | Sat-Sun 8:00 AM - 6:00 PM',
+    currentWaitTimeMins: 15,
+    copayAmount: 35,
+    averageTotalCost: 180,
+    phone: '(312) 555-0192',
+    acceptsMedicare: true,
+    services: [
+      'On-site X-Ray & Lab Testing',
+      'Asthma Nebulizer Treatments',
+      'Laceration Repair & Stitches',
+      'Sprains, Strains & Minor Fractures',
+      'Urinary Tract Infection Treatment'
+    ]
+  },
+  {
+    id: 'prov-03',
+    name: 'Walgreens Healthcare Clinic - Diversey Walk-In',
+    type: 'RETAIL_CLINIC',
+    address: '2817 N Diversey Pkwy',
+    cityStateZip: 'Chicago, IL 60657',
+    distanceMiles: 1.8,
+    isOpen247: false,
+    operatingHours: 'Mon-Sun 8:00 AM - 7:30 PM',
+    currentWaitTimeMins: 10,
+    copayAmount: 15,
+    averageTotalCost: 95,
+    phone: '(773) 555-0143',
+    acceptsMedicare: true,
+    services: [
+      'Flu, Strep & COVID Testing',
+      'Vaccinations & Immunizations',
+      'Minor Skin Rashes & Bug Bites',
+      'Medication Renewals & Checks'
+    ]
+  },
+  {
+    id: 'prov-04',
+    name: 'Lincoln Park Senior Primary Care & Same-Day Clinic',
+    type: 'PRIMARY_CARE',
+    address: '2400 N Sheffield Ave, Suite 300',
+    cityStateZip: 'Chicago, IL 60614',
+    distanceMiles: 0.9,
+    isOpen247: false,
+    operatingHours: 'Mon-Fri 8:00 AM - 6:00 PM | Same-Day Slots Open Daily',
+    currentWaitTimeMins: 20,
+    copayAmount: 10,
+    averageTotalCost: 120,
+    phone: '(312) 555-0188',
+    acceptsMedicare: true,
+    services: [
+      'Comprehensive Chronic Care Management',
+      'PCP Follow-Up After ED Visit',
+      'Diabetes & Hypertension Monitoring',
+      'Care Management Coordinator On-Site'
+    ]
+  },
+  {
+    id: 'prov-05',
+    name: 'Concentra Urgent Care - West Town',
+    type: 'URGENT_CARE',
+    address: '1030 W Chicago Ave',
+    cityStateZip: 'Chicago, IL 60622',
+    distanceMiles: 2.4,
+    isOpen247: false,
+    operatingHours: 'Mon-Fri 7:00 AM - 7:00 PM | Sat 8:00 AM - 4:00 PM',
+    currentWaitTimeMins: 25,
+    copayAmount: 35,
+    averageTotalCost: 195,
+    phone: '(312) 555-0110',
+    acceptsMedicare: true,
+    services: ['Minor Injuries', 'EKG & Rapid Blood Work', 'Respiratory Treatments']
+  }
+];
+
+export const MOCK_POPULATION_ANALYTICS: PopulationAnalytics = {
+  totalPatients: 1250,
+  totalEdVisits: 3120,
+  avoidableEdVisitsCount: 1840,
+  avoidableEdPercentage: 59,
+  totalEdSpend: 5616000, // $5.6M
+  potentialSavings: 3312000, // $3.3M avoidable
+  nyuCategoryBreakdown: [
+    {
+      category: 'NON_EMERGENT',
+      label: 'Non-Emergent (Refills, Rashes, Minor Aches)',
+      count: 624,
+      percentage: 20,
+      color: '#3B82F6' // Blue
+    },
+    {
+      category: 'EMERGENT_PRIMARY_CARE_TREATABLE',
+      label: 'Emergent - PCP / Urgent Care Treatable',
+      count: 811,
+      percentage: 26,
+      color: '#06B6D4' // Cyan
+    },
+    {
+      category: 'EMERGENT_PREVENTABLE',
+      label: 'Emergent - Preventable with Care Management',
+      count: 405,
+      percentage: 13,
+      color: '#F59E0B' // Amber
+    },
+    {
+      category: 'EMERGENT_ED_NEEDED',
+      label: 'Emergent - ED Needed / Non-Avoidable',
+      count: 1280,
+      percentage: 41,
+      color: '#EF4444' // Red (True emergencies)
+    }
+  ],
+  timeOfDayPattern: [
+    { timeSlot: 'Morning (7am - 12pm)', count: 650, avoidableCount: 260 },
+    { timeSlot: 'Afternoon (12pm - 5pm)', count: 820, avoidableCount: 410 },
+    { timeSlot: 'Evening (5pm - 10pm)', count: 980, avoidableCount: 680 },
+    { timeSlot: 'Night / After Hours (10pm - 7am)', count: 670, avoidableCount: 490 }
+  ],
+  dayOfWeekPattern: [
+    { dayType: 'Weekdays (Mon-Fri)', count: 1820, avoidableCount: 920 },
+    { dayType: 'Weekends (Sat-Sun)', count: 1300, avoidableCount: 920 }
+  ],
+  topAvoidableDiagnoses: [
+    {
+      icd10: 'J44.1',
+      description: 'COPD Exacerbation (Mild)',
+      count: 245,
+      avgCostEr: 1820,
+      avgCostClinic: 150
+    },
+    {
+      icd10: 'I10',
+      description: 'Uncontrolled Essential Hypertension',
+      count: 210,
+      avgCostEr: 1890,
+      avgCostClinic: 90
+    },
+    {
+      icd10: 'E11.65',
+      description: 'Type 2 Diabetes with Hyperglycemia',
+      count: 195,
+      avgCostEr: 2050,
+      avgCostClinic: 110
+    },
+    {
+      icd10: 'N39.0',
+      description: 'Uncomplicated Urinary Tract Infection',
+      count: 180,
+      avgCostEr: 1680,
+      avgCostClinic: 85
+    },
+    {
+      icd10: 'M54.50',
+      description: 'Acute Non-Specific Low Back Pain',
+      count: 165,
+      avgCostEr: 1750,
+      avgCostClinic: 130
+    }
+  ],
+  sdohBarrierDistribution: [
+    { barrier: 'Lack of Evening/Weekend PCP Access', patientCount: 480 },
+    { barrier: 'Transportation Deficit / No Car', patientCount: 310 },
+    { barrier: 'Prescription Non-Adherence / Refill Delays', patientCount: 290 },
+    { barrier: 'Low Health Literacy / Unsure where to call', patientCount: 260 },
+    { barrier: 'Isolation / Living Alone', patientCount: 195 }
+  ]
+};

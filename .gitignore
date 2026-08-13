@@ -1,0 +1,90 @@
+# ===============================
+# JavaScript dependencies and builds
+# ===============================
+
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+
+
+# ===============================
+# Python environments, caches
+# ===============================
+
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.mypy_cache/
+
+.ipynb_checkpoints/
+
+
+# ===============================
+# Secrets and local configuration
+# ===============================
+
+.env
+.env.*
+
+!.env.example
+
+
+# ===============================
+# Raw CMS datasets (DO NOT PUSH)
+# ===============================
+
+datasets/*.csv
+!datasets/.gitkeep
+
+
+# ===============================
+# Processed data handling
+# ===============================
+
+# Large cleaned claim-level files
+processed_data/beneficiary_clean.csv
+processed_data/inpatient_clean.csv
+processed_data/outpatient_clean.csv
+
+
+# Keep ML-ready artifacts
+!processed_data/utilization_features.csv
+!processed_data/risk_predictions.csv
+!processed_data/feature_validation_report.json
+
+# Future anomaly output
+!processed_data/anomaly_results.csv
+
+
+# ===============================
+# ML model artifacts
+# ===============================
+
+# Keep trained models and explainability files
+
+!ml_models/*.pkl
+!ml_models/*.csv
+!ml_models/*.json
+!ml_models/*.md
+
+!ml_models/.gitkeep
+
+
+# ===============================
+# Local tooling and OS files
+# ===============================
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+
+.codex/
+.agents/

@@ -1,0 +1,17 @@
+feature,importance
+inpatient_utilization_intensity,0.32208106
+inpatient_visit_count,0.3217375
+inpatient_total_cost,0.07292563
+provider_count,0.035612177
+outpatient_total_cost,0.03393228
+provider_fragmentation_score,0.031049944
+average_claim_cost,0.029704498
+cost_intensity,0.029408772
+age,0.029038578
+gender_Female,0.026514726
+total_claim_payment_amount,0.026483852
+outpatient_visit_count,0.02388427
+gender_Male,0.017626753
+chronic_condition_count,0.0
+dual_eligibility_months,0.0
+active_utilization_months,0.0

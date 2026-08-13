@@ -1,0 +1,402 @@
+{
+  "model_purpose": "Historical utilization-pattern prioritization for proactive care navigation; not an emergency-necessity determination.",
+  "target_definition": "high_utilization_pattern = ed_visit_count at or above annual dataset 90th percentile",
+  "ed_visit_count_cutoff": 9.0,
+  "observation_months_assumption": 12,
+  "excluded_from_training_for_leakage": [
+    "BENE_ID",
+    "ed_to_outpatient_dependency_ratio",
+    "ed_visit_count",
+    "ed_visit_intensity",
+    "total_ed_related_cost"
+  ],
+  "baseline_xgboost": {
+    "accuracy": 0.930835734870317,
+    "precision": 0.6076923076923076,
+    "recall": 0.8977272727272727,
+    "f1_score": 0.7247706422018348,
+    "roc_auc": 0.9760846113476004,
+    "confusion_matrix": [
+      [
+        1457,
+        102
+      ],
+      [
+        18,
+        158
+      ]
+    ]
+  },
+  "class_weight_experiments": {
+    "no_class_weight": {
+      "weight": 1.0,
+      "best_cv_f1": 0.7920301189996826,
+      "best_params": {
+        "classifier__subsample": 0.65,
+        "classifier__n_estimators": 500,
+        "classifier__min_child_weight": 2,
+        "classifier__max_depth": 5,
+        "classifier__learning_rate": 0.05,
+        "classifier__colsample_bytree": 0.65
+      },
+      "validation_metrics": {
+        "accuracy": 0.9515570934256056,
+        "precision": 0.7948717948717948,
+        "recall": 0.7045454545454546,
+        "f1_score": 0.7469879518072289,
+        "roc_auc": 0.9752341288365037,
+        "confusion_matrix": [
+          [
+            1526,
+            32
+          ],
+          [
+            52,
+            124
+          ]
+        ]
+      },
+      "threshold": 0.5,
+      "threshold_table": [
+        {
+          "threshold": 0.3,
+          "precision": 0.7172774869109948,
+          "recall": 0.7784090909090909,
+          "f1_score": 0.7465940054495913
+        },
+        {
+          "threshold": 0.4,
+          "precision": 0.757396449704142,
+          "recall": 0.7272727272727273,
+          "f1_score": 0.7420289855072464
+        },
+        {
+          "threshold": 0.5,
+          "precision": 0.7948717948717948,
+          "recall": 0.7045454545454546,
+          "f1_score": 0.7469879518072289
+        },
+        {
+          "threshold": 0.6,
+          "precision": 0.8194444444444444,
+          "recall": 0.6704545454545454,
+          "f1_score": 0.7375
+        },
+        {
+          "threshold": 0.7,
+          "precision": 0.856,
+          "recall": 0.6079545454545454,
+          "f1_score": 0.7109634551495017
+        },
+        {
+          "threshold": 0.8,
+          "precision": 0.8666666666666667,
+          "recall": 0.5170454545454546,
+          "f1_score": 0.6476868327402135
+        }
+      ]
+    },
+    "current_scale_pos_weight": {
+      "weight": 8.815094339622641,
+      "best_cv_f1": 0.7920301189996826,
+      "best_params": {
+        "classifier__subsample": 0.65,
+        "classifier__n_estimators": 500,
+        "classifier__min_child_weight": 2,
+        "classifier__max_depth": 5,
+        "classifier__learning_rate": 0.05,
+        "classifier__colsample_bytree": 0.65
+      },
+      "validation_metrics": {
+        "accuracy": 0.9434832756632064,
+        "precision": 0.6822429906542056,
+        "recall": 0.8295454545454546,
+        "f1_score": 0.7487179487179487,
+        "roc_auc": 0.9770283872097094,
+        "confusion_matrix": [
+          [
+            1490,
+            68
+          ],
+          [
+            30,
+            146
+          ]
+        ]
+      },
+      "threshold": 0.4,
+      "threshold_table": [
+        {
+          "threshold": 0.3,
+          "precision": 0.6651785714285714,
+          "recall": 0.8465909090909091,
+          "f1_score": 0.745
+        },
+        {
+          "threshold": 0.4,
+          "precision": 0.6822429906542056,
+          "recall": 0.8295454545454546,
+          "f1_score": 0.7487179487179487
+        },
+        {
+          "threshold": 0.5,
+          "precision": 0.6945812807881774,
+          "recall": 0.8011363636363636,
+          "f1_score": 0.7440633245382586
+        },
+        {
+          "threshold": 0.6,
+          "precision": 0.7172774869109948,
+          "recall": 0.7784090909090909,
+          "f1_score": 0.7465940054495913
+        },
+        {
+          "threshold": 0.7,
+          "precision": 0.7485714285714286,
+          "recall": 0.7443181818181818,
+          "f1_score": 0.7464387464387464
+        },
+        {
+          "threshold": 0.8,
+          "precision": 0.7948717948717948,
+          "recall": 0.7045454545454546,
+          "f1_score": 0.7469879518072289
+        }
+      ]
+    },
+    "adjusted_scale_pos_weight": {
+      "weight": 6.611320754716981,
+      "best_cv_f1": 0.7920301189996826,
+      "best_params": {
+        "classifier__subsample": 0.65,
+        "classifier__n_estimators": 500,
+        "classifier__min_child_weight": 2,
+        "classifier__max_depth": 5,
+        "classifier__learning_rate": 0.05,
+        "classifier__colsample_bytree": 0.65
+      },
+      "validation_metrics": {
+        "accuracy": 0.9429065743944637,
+        "precision": 0.6757990867579908,
+        "recall": 0.8409090909090909,
+        "f1_score": 0.7493670886075949,
+        "roc_auc": 0.9769299218111798,
+        "confusion_matrix": [
+          [
+            1487,
+            71
+          ],
+          [
+            28,
+            148
+          ]
+        ]
+      },
+      "threshold": 0.3,
+      "threshold_table": [
+        {
+          "threshold": 0.3,
+          "precision": 0.6757990867579908,
+          "recall": 0.8409090909090909,
+          "f1_score": 0.7493670886075949
+        },
+        {
+          "threshold": 0.4,
+          "precision": 0.6839622641509434,
+          "recall": 0.8238636363636364,
+          "f1_score": 0.7474226804123711
+        },
+        {
+          "threshold": 0.5,
+          "precision": 0.7091836734693877,
+          "recall": 0.7897727272727273,
+          "f1_score": 0.7473118279569892
+        },
+        {
+          "threshold": 0.6,
+          "precision": 0.7458563535911602,
+          "recall": 0.7670454545454546,
+          "f1_score": 0.7563025210084033
+        },
+        {
+          "threshold": 0.7,
+          "precision": 0.7619047619047619,
+          "recall": 0.7272727272727273,
+          "f1_score": 0.7441860465116279
+        },
+        {
+          "threshold": 0.8,
+          "precision": 0.8066666666666666,
+          "recall": 0.6875,
+          "f1_score": 0.7423312883435583
+        }
+      ]
+    },
+    "baseline_parameters_threshold_tuned": {
+      "weight": 8.815094339622641,
+      "best_cv_f1": null,
+      "best_params": {
+        "classifier__max_depth": 4,
+        "classifier__learning_rate": 0.05,
+        "classifier__n_estimators": 300,
+        "classifier__subsample": 0.8,
+        "classifier__colsample_bytree": 0.8
+      },
+      "validation_metrics": {
+        "accuracy": 0.9423298731257209,
+        "precision": 0.6759259259259259,
+        "recall": 0.8295454545454546,
+        "f1_score": 0.7448979591836735,
+        "roc_auc": 0.978432430855409,
+        "confusion_matrix": [
+          [
+            1488,
+            70
+          ],
+          [
+            30,
+            146
+          ]
+        ]
+      },
+      "threshold": 0.6,
+      "threshold_table": [
+        {
+          "threshold": 0.3,
+          "precision": 0.6111111111111112,
+          "recall": 0.9375,
+          "f1_score": 0.7399103139013453
+        },
+        {
+          "threshold": 0.4,
+          "precision": 0.6265060240963856,
+          "recall": 0.8863636363636364,
+          "f1_score": 0.7341176470588235
+        },
+        {
+          "threshold": 0.5,
+          "precision": 0.6440677966101694,
+          "recall": 0.8636363636363636,
+          "f1_score": 0.7378640776699029
+        },
+        {
+          "threshold": 0.6,
+          "precision": 0.6759259259259259,
+          "recall": 0.8295454545454546,
+          "f1_score": 0.7448979591836735
+        },
+        {
+          "threshold": 0.7,
+          "precision": 0.7070707070707071,
+          "recall": 0.7954545454545454,
+          "f1_score": 0.7486631016042781
+        },
+        {
+          "threshold": 0.8,
+          "precision": 0.7485714285714286,
+          "recall": 0.7443181818181818,
+          "f1_score": 0.7464387464387464
+        }
+      ]
+    }
+  },
+  "selected_experiment": "adjusted_scale_pos_weight",
+  "selected_threshold": 0.3,
+  "tuned_xgboost": {
+    "accuracy": 0.9325648414985591,
+    "precision": 0.6204081632653061,
+    "recall": 0.8636363636363636,
+    "f1_score": 0.7220902612826603,
+    "roc_auc": 0.9747324916904776,
+    "confusion_matrix": [
+      [
+        1466,
+        93
+      ],
+      [
+        24,
+        152
+      ]
+    ]
+  },
+  "model_comparison": [
+    {
+      "model": "Baseline XGBoost",
+      "precision": 0.6076923076923076,
+      "recall": 0.8977272727272727,
+      "f1_score": 0.7247706422018348,
+      "roc_auc": 0.9760846113476004
+    },
+    {
+      "model": "Tuned XGBoost",
+      "precision": 0.6204081632653061,
+      "recall": 0.8636363636363636,
+      "f1_score": 0.7220902612826603,
+      "roc_auc": 0.9747324916904776
+    }
+  ],
+  "top_feature_importance": [
+    {
+      "feature": "inpatient_utilization_intensity",
+      "importance": 0.322081059217453
+    },
+    {
+      "feature": "inpatient_visit_count",
+      "importance": 0.32173749804496765
+    },
+    {
+      "feature": "inpatient_total_cost",
+      "importance": 0.0729256272315979
+    },
+    {
+      "feature": "provider_count",
+      "importance": 0.03561217710375786
+    },
+    {
+      "feature": "outpatient_total_cost",
+      "importance": 0.03393227979540825
+    },
+    {
+      "feature": "provider_fragmentation_score",
+      "importance": 0.031049944460392
+    },
+    {
+      "feature": "average_claim_cost",
+      "importance": 0.029704498127102852
+    },
+    {
+      "feature": "cost_intensity",
+      "importance": 0.0294087715446949
+    },
+    {
+      "feature": "age",
+      "importance": 0.029038578271865845
+    },
+    {
+      "feature": "gender_Female",
+      "importance": 0.026514725759625435
+    },
+    {
+      "feature": "total_claim_payment_amount",
+      "importance": 0.026483852416276932
+    },
+    {
+      "feature": "outpatient_visit_count",
+      "importance": 0.02388427034020424
+    },
+    {
+      "feature": "gender_Male",
+      "importance": 0.017626753076910973
+    },
+    {
+      "feature": "chronic_condition_count",
+      "importance": 0.0
+    },
+    {
+      "feature": "dual_eligibility_months",
+      "importance": 0.0
+    }
+  ],
+  "shap_analysis": "Not generated: the optional shap package is not installed in this environment. Tree feature importance is saved instead.",
+  "interpretation": "Higher importance indicates historical member-level utilization patterns that most influenced model scores; it is not a causal or clinical explanation."
+}

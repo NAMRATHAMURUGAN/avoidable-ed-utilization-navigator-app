@@ -1,0 +1,20 @@
+# Core data processing and model training
+pandas>=2.1.0
+numpy>=1.26.0
+scikit-learn>=1.9.0
+xgboost>=3.4.0
+
+# Exploration and notebook workflow
+matplotlib>=3.8.0
+seaborn>=0.13.0
+jupyter>=1.1.0
+ipykernel>=6.29.0
+
+# Optional Python services and integrations retained for future backend/RAG work
+flask>=3.1.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.2.0
+requests>=2.31.0
+jinja2>=3.1.0
+google-genai>=2.17.0
+pinecone-client>=6.0.0

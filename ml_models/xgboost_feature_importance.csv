@@ -1,0 +1,13 @@
+feature,importance
+inpatient_visit_count,0.4723594
+inpatient_total_cost,0.12028713
+total_claim_payment_amount,0.102272674
+provider_count,0.05432474
+average_claim_cost,0.049802106
+outpatient_total_cost,0.048039995
+gender_Female,0.045887616
+age,0.043652903
+outpatient_visit_count,0.036747225
+gender_Male,0.026626205
+chronic_condition_count,0.0
+dual_eligibility_months,0.0
