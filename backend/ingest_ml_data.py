@@ -7,9 +7,10 @@ loads the existing member-level aggregate data and associated model outputs.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -30,8 +31,6 @@ from backend.models import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROCESSED_DATA_DIR = PROJECT_ROOT / "processed_data"
 MODEL_DIR = PROJECT_ROOT / "ml_models"
-EXPECTED_MEMBER_COUNT = 8_671
-
 UTILIZATION_COLUMNS = {
     "BENE_ID", "age", "gender", "dual_eligibility_months",
     "chronic_condition_count", "inpatient_visit_count", "inpatient_total_cost",
@@ -66,6 +65,13 @@ class SourceData:
     utilization: dict[str, dict[str, Any]]
     risk: dict[str, dict[str, Any]]
     anomaly: dict[str, dict[str, Any]]
+    dataset_identifier: str
+    ingested_at: datetime
+    source_filenames: dict[str, str]
+
+    @property
+    def member_count(self) -> int:
+        return len(self.utilization)
 
 
 def _read_csv(path: Path, expected_columns: set[str]) -> list[dict[str, str]]:
@@ -122,25 +128,42 @@ def _index_rows(rows: list[dict[str, str]], source_name: str) -> dict[str, dict[
         if bene_id in indexed:
             raise SourceValidationError(f"{source_name} contains duplicate BENE_ID: {bene_id!r}.")
         indexed[bene_id] = row
-    if len(indexed) != EXPECTED_MEMBER_COUNT:
-        raise SourceValidationError(
-            f"{source_name} must contain {EXPECTED_MEMBER_COUNT} members; found {len(indexed)}."
-        )
+    if not indexed:
+        raise SourceValidationError(f"{source_name} must contain at least one member.")
     return indexed
 
 
-def load_and_validate_sources() -> SourceData:
+def _dataset_identifier(paths: tuple[Path, Path, Path]) -> str:
+    """Create a stable content identity without treating BENE_ID as a number."""
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1_048_576), b""):
+                digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def load_and_validate_sources(
+    utilization_path: Path | None = None,
+    risk_path: Path | None = None,
+    anomaly_path: Path | None = None,
+) -> SourceData:
     """Load every source and validate all data before any database transaction."""
+    utilization_path = utilization_path or PROCESSED_DATA_DIR / "utilization_features.csv"
+    risk_path = risk_path or PROCESSED_DATA_DIR / "risk_predictions.csv"
+    anomaly_path = anomaly_path or PROCESSED_DATA_DIR / "anomaly_results.csv"
     utilization_rows = _index_rows(
-        _read_csv(PROCESSED_DATA_DIR / "utilization_features.csv", UTILIZATION_COLUMNS),
+        _read_csv(utilization_path, UTILIZATION_COLUMNS),
         "utilization_features.csv",
     )
     risk_rows = _index_rows(
-        _read_csv(PROCESSED_DATA_DIR / "risk_predictions.csv", RISK_COLUMNS),
+        _read_csv(risk_path, RISK_COLUMNS),
         "risk_predictions.csv",
     )
     anomaly_rows = _index_rows(
-        _read_csv(PROCESSED_DATA_DIR / "anomaly_results.csv", ANOMALY_COLUMNS),
+        _read_csv(anomaly_path, ANOMALY_COLUMNS),
         "anomaly_results.csv",
     )
     if set(utilization_rows) != set(risk_rows) or set(utilization_rows) != set(anomaly_rows):
@@ -200,7 +223,19 @@ def load_and_validate_sources() -> SourceData:
             "model_version": model_version,
             "generated_at": generated_at,
         }
-    return SourceData(utilization=utilization, risk=risk, anomaly=anomaly)
+    source_paths = (utilization_path, risk_path, anomaly_path)
+    return SourceData(
+        utilization=utilization,
+        risk=risk,
+        anomaly=anomaly,
+        dataset_identifier=_dataset_identifier(source_paths),
+        ingested_at=datetime.now(timezone.utc),
+        source_filenames={
+            "utilization_features": utilization_path.name,
+            "risk_predictions": risk_path.name,
+            "anomaly_results": anomaly_path.name,
+        },
+    )
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -237,6 +272,12 @@ def _load_model_runs(session: Session, sources: SourceData) -> tuple[ModelRun, M
     anomaly_metrics = _read_json(MODEL_DIR / "isolation_forest_metrics.json")
     anomaly_metadata = _read_json(MODEL_DIR / "isolation_forest_feature_metadata.json")
     anomaly_generated_at = next(iter(sources.anomaly.values()))["generated_at"]
+    ingestion_context = {
+        "dataset_identifier": sources.dataset_identifier,
+        "ingested_at": sources.ingested_at.isoformat(),
+        "source_filenames": sources.source_filenames,
+        "member_count": sources.member_count,
+    }
     xgb_run = _get_or_create_model_run(
         session,
         model_type="xgboost",
@@ -245,7 +286,10 @@ def _load_model_runs(session: Session, sources: SourceData) -> tuple[ModelRun, M
         purpose=xgb_metrics["model_purpose"],
         target_definition=xgb_metrics["target_definition"],
         leakage_exclusions=xgb_metrics["excluded_from_training_for_leakage"],
-        configuration={"ed_visit_count_cutoff": xgb_metrics["ed_visit_count_cutoff"]},
+        configuration={
+            "ed_visit_count_cutoff": xgb_metrics["ed_visit_count_cutoff"],
+            "ingestion_context": ingestion_context,
+        },
         metrics=xgb_metrics["test_metrics"],
         artifact_reference="ml_models/xgboost_risk_model.pkl",
     )
@@ -257,16 +301,23 @@ def _load_model_runs(session: Session, sources: SourceData) -> tuple[ModelRun, M
         purpose=anomaly_metrics["model_purpose"],
         target_definition=None,
         leakage_exclusions=anomaly_metadata["excluded_columns_for_leakage_prevention"],
-        configuration=anomaly_metadata["selected_configuration"],
+        configuration={
+            **anomaly_metadata["selected_configuration"],
+            "ingestion_context": ingestion_context,
+        },
         metrics=anomaly_metrics,
         artifact_reference="ml_models/isolation_forest.pkl",
     )
     return xgb_run, anomaly_run
 
 
-def ingest_ml_data() -> dict[str, int]:
+def ingest_ml_data(
+    utilization_path: Path | None = None,
+    risk_path: Path | None = None,
+    anomaly_path: Path | None = None,
+) -> dict[str, int]:
     """Validate sources, then create or update this exact dataset atomically."""
-    sources = load_and_validate_sources()
+    sources = load_and_validate_sources(utilization_path, risk_path, anomaly_path)
     create_database_schema()
     with session_scope() as session:
         xgb_run, anomaly_run = _load_model_runs(session, sources)
@@ -328,10 +379,10 @@ def ingest_ml_data() -> dict[str, int]:
             anomaly_result.generated_at = anomaly["generated_at"]
 
         return {
-            "members": len(sources.utilization),
-            "member_utilization_snapshots": len(sources.utilization),
-            "xgboost_utilization_predictions": len(sources.risk),
-            "utilization_anomaly_results": len(sources.anomaly),
+            "members": sources.member_count,
+            "member_utilization_snapshots": sources.member_count,
+            "xgboost_utilization_predictions": sources.member_count,
+            "utilization_anomaly_results": sources.member_count,
             "model_runs": 2,
         }
 

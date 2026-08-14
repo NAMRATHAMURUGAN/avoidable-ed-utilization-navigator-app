@@ -10,6 +10,9 @@ seaborn>=0.13.0
 jupyter>=1.1.0
 ipykernel>=6.29.0
 
+# Test suite
+pytest>=8.0.0
+
 # Optional Python services and integrations retained for future backend/RAG work
 flask>=3.1.0
 SQLAlchemy>=2.0,<3.0
