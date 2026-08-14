@@ -7,6 +7,7 @@ import {
   MOCK_POPULATION_ANALYTICS
 } from './src/data/mockCmsData';
 import { TriageRequest, TriageResponse, ProviderAlternative } from './src/types';
+import { evaluateSafety } from './src/services/safetyEngine';
 
 dotenv.config();
 
@@ -85,12 +86,11 @@ app.get('/api/providers', (req, res) => {
 app.post('/api/triage', async (req, res) => {
   try {
     const triageReq: TriageRequest = req.body;
+    // The deterministic engine is the authoritative configured-warning-sign
+    // screen. It is not diagnostic and neither ML nor LLM output can override it.
+    const safetyDecision = evaluateSafety(triageReq);
 
-    // Direct Red-Flag Check
-    const redFlagList = triageReq.selectedRedFlags || [];
-    const isEmergencyRedFlag = triageReq.hasRedFlags || redFlagList.length > 0;
-
-    if (isEmergencyRedFlag) {
+    if (safetyDecision.isEmergency) {
       const emergencyResponse: TriageResponse = {
         isEmergencyRedFlag: true,
         recommendedAcuity: 'EMERGENCY',
@@ -197,6 +197,10 @@ Respond strictly in valid JSON format matching this schema:
       });
 
       const parsed: TriageResponse = JSON.parse(aiRes.text || '{}');
+
+      // Gemini may assist non-emergency navigation only; deterministic safety
+      // screening remains the sole authority for emergency-warning-sign status.
+      parsed.isEmergencyRedFlag = false;
 
       // Filter matching local providers
       const suitable = MOCK_PROVIDERS.filter((p) => p.type === parsed.recommendedAcuity);
