@@ -1,1 +1,1 @@
-"""Standalone Python database foundation for the care-navigation project."""
+"""Backend package for database, ML-results API, and application services."""
