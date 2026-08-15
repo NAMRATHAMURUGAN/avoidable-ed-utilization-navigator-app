@@ -21,6 +21,7 @@ from backend.models import (
     Member,
     MemberUtilizationSnapshot,
     ModelRun,
+    Provider,
     UtilizationAnomalyResult,
     XGBoostUtilizationPrediction,
 )
@@ -182,6 +183,26 @@ class ApiEndpointsTestCase(unittest.TestCase):
         )
         self.db_session.add(m3)
 
+        provider = Provider(
+            id="provider-urgent-care-1",
+            name="SQLite Urgent Care",
+            type="URGENT_CARE",
+            address="1 Test Street",
+            city_state_zip="Testville, TS 00000",
+            distance_miles=1.5,
+            is_open_247=False,
+            operating_hours="8 AM - 8 PM",
+            current_wait_time_mins=15,
+            copay_amount=25.0,
+            average_total_cost=180.0,
+            phone="555-0100",
+            telehealth_url=None,
+            accepts_medicare=True,
+            services=["Urgent Care"],
+            is_demo=False,
+        )
+        self.db_session.add(provider)
+
         self.db_session.commit()
 
     def test_member_repository_bulk_query_no_member_loss(self) -> None:
@@ -295,7 +316,8 @@ class ApiEndpointsTestCase(unittest.TestCase):
             "selectedRedFlags": [],
             "hasRedFlags": False,
         }
-        response = self.client.post("/api/triage", json=payload)
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            response = self.client.post("/api/triage", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertFalse(data["isEmergencyRedFlag"])
@@ -311,7 +333,8 @@ class ApiEndpointsTestCase(unittest.TestCase):
             "selectedRedFlags": [],
             "hasRedFlags": True,
         }
-        response = self.client.post("/api/triage", json=payload)
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            response = self.client.post("/api/triage", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data["isEmergencyRedFlag"])
@@ -462,17 +485,21 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertEqual(data, {"error": "Content-Type must be application/json"})
 
         # Empty JSON object should process safely without crashing
-        empty_res = self.client.post("/api/triage", json={})
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            empty_res = self.client.post("/api/triage", json={})
         self.assertEqual(empty_res.status_code, 200)
         empty_data = empty_res.get_json()
         self.assertFalse(empty_data["isEmergencyRedFlag"])
 
-    def test_get_providers_returns_compatibility_providers(self) -> None:
-        response = self.client.get("/api/providers")
+    def test_get_providers_returns_database_providers(self) -> None:
+        with patch("backend.services.provider_service.session_scope", self._mock_session_scope):
+            response = self.client.get("/api/providers")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 5)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], "provider-urgent-care-1")
+        self.assertFalse(data[0]["isDemo"])
 
     def test_existing_ml_results_health(self) -> None:
         response = self.client.get("/api/ml/health")
