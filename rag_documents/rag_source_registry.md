@@ -70,4 +70,3 @@ analytics from medical decision-making.
 | `emr/payer_patient_access_fhir.md` | CMS | Patient Access API and clinical data exchange |
 | `clinical_guidelines/clinical_guidance_boundary.md` | Project policy | Scope and governance boundary for clinical guidance |
 | `emr/synthetic_emr_structure.md` | Project-defined synthetic content | EMR demonstration structure |
-| `utilization_patterns/utilization_analytics_patterns.md` | Project model-training results | Non-clinical utilization analytics |

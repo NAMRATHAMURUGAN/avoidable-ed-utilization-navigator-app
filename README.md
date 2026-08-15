@@ -12,7 +12,7 @@ A safety-first healthcare navigation product with two experiences: a consumer-fa
 - **Safety Engine**: `backend/safety/engine.py` and `backend/safety/rules.py` are a deterministic, dependency-free rule engine (no ML, no database, no network) that is the hard safety boundary for the `/api/triage` endpoint. It is a verified behavioral parity port of the original TypeScript engine in `src/services/safetyEngine.ts`.
 - **Frontend**: Plain HTML5, CSS3, and vanilla ES module JavaScript (`public/`), served directly by Flask. No build step, framework, or component library.
 - **Provider / location discovery**: Not yet implemented against a real data source. The "Find care near you" screen shows an honest "integration pending configuration" state rather than fabricated hospitals, clinics, or appointment slots. It is architected to be backed by Google Maps / Places once credentials are configured — no such integration exists yet.
-- **RAG / knowledge base**: Not implemented. `rag_documents/` and `notebooks/08_rag_preparation.ipynb` are empty scaffolding for a future retrieval-augmented explanation layer that would sit behind the Safety Engine. `google-genai` and `pinecone-client` are listed in `requirements.txt` for that future work but are not wired into any running code path today.
+- **RAG / knowledge base**: The approved Markdown knowledge base can be explicitly embedded and indexed offline; it is not part of Flask startup and no retrieval or Gemini response generation is implemented. See [`docs/rag_ingestion.md`](docs/rag_ingestion.md).
 
 ## Product experiences
 
@@ -43,7 +43,7 @@ processed_data/utilization_features.csv --> XGBoost + Isolation Forest artifacts
 - Backend: Flask (Python)
 - Database: PostgreSQL via SQLAlchemy
 - ML/data pipeline: Python, pandas, NumPy, scikit-learn, XGBoost
-- Planned (not yet implemented): Google Maps / Places for provider discovery; a RAG/knowledge-base layer for grounded patient-facing explanations
+- Planned (not yet implemented): Google Maps / Places provider discovery; Gemini-grounded RAG responses and Flask RAG integration
 
 ## Run locally
 
@@ -59,6 +59,13 @@ Set `DATABASE_URL` in a `.env` file (see `.env.example`), then initialize the sc
 ```bash
 .venv\Scripts\python backend\initialize_database.py
 .venv\Scripts\python backend\ingest_ml_data.py
+```
+
+To index only the approved shared knowledge base after configuring the RAG
+variables in `.env.example`, run:
+
+```bash
+.venv\Scripts\python backend\ingest_rag_documents.py
 ```
 
 Start the app:
@@ -118,7 +125,7 @@ processed_data/          Local generated cleaned data, features, and predictions
 ml_models/                Local generated model artifacts and reports
 datasets/                Local raw source CSV datasets
 notebooks/                Exploration, validation, and RAG-preparation notebooks (08 is a placeholder)
-rag_documents/            Placeholder directories for a future knowledge-base/RAG layer
+rag_documents/            Approved Markdown sources for offline RAG knowledge-base ingestion
 ```
 
 ## What's implemented vs. planned
@@ -131,7 +138,8 @@ rag_documents/            Placeholder directories for a future knowledge-base/RA
 | Patient self-entry profile, symptom triage, care history | Implemented |
 | Payer population analytics (members, ED visits, ED spend), risk stratification | Implemented |
 | Google Maps / Places provider discovery | Planned — integration boundary only, no credentials configured |
-| RAG / knowledge-base grounded explanations | Planned — empty scaffolding only |
+| RAG knowledge-base ingestion | Implemented offline — Markdown parsing, embeddings, and Pinecone upsert; no live ingestion without configured credentials/index |
+| Gemini-grounded RAG responses / Flask integration | Planned — no generation, retrieval, or RAG endpoint yet |
 
 ## GitHub guidance
 
