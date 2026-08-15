@@ -30,3 +30,30 @@ def get_database_settings() -> DatabaseSettings:
             "DATABASE_URL must be set to initialize the PostgreSQL database foundation."
         )
     return DatabaseSettings(database_url=database_url)
+
+
+@dataclass(frozen=True)
+class SecuritySettings:
+    """Security settings required by Flask session/cookie signing.
+
+    Configuration is intentionally limited to secret-key material. No
+    database, ML, or third-party integration settings live here.
+    """
+
+    secret_key: str
+
+
+def get_security_settings() -> SecuritySettings:
+    """Read the required Flask session-signing secret without exposing it.
+
+    Fails loudly rather than falling back to an insecure default, matching
+    the fail-fast behavior already used by get_database_settings().
+    """
+    secret_key = os.getenv("SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError(
+            "SECRET_KEY must be set to initialize Flask session signing. "
+            "Generate a long random value and set it in your environment "
+            "(see .env.example)."
+        )
+    return SecuritySettings(secret_key=secret_key)
