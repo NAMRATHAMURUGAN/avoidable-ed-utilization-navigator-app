@@ -4,49 +4,513 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#123047" />
-    <title>Care Navigation Navigator</title>
+    <title>Care Navigation Navigator — Healthcare Decision Support</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="safety-strip">For symptoms such as chest pain, stroke signs, severe breathing difficulty, or loss of consciousness, call 911 or seek emergency care immediately.</div>
+    <!-- Emergency Warning Strip -->
+    <div class="safety-strip" role="region" aria-label="Emergency warning">
+      <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 3-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span><strong>Medical Emergency Notice:</strong> If you are experiencing chest pain, severe shortness of breath, stroke symptoms, or loss of consciousness, call <strong>911</strong> or go to the nearest emergency room immediately.</span>
+    </div>
+
+    <!-- Application Topbar Header -->
     <header class="topbar">
-      <a class="brand" href="#dashboard" data-route="dashboard"><span class="brand-mark">+</span><span>Care Navigation<br /><strong>Navigator</strong></span></a>
-      <nav id="primary-nav" aria-label="Primary navigation">
-        <button data-route="dashboard" class="active">Overview</button>
-        <button data-route="cohort">Member cohort</button>
-        <button data-route="providers">Care options</button>
-        <button data-route="triage">Safety triage</button>
-        <button data-route="care-plan">Care plan</button>
-      </nav>
-      <button id="chat-toggle" class="button ghost">Care copilot</button>
+      <div class="topbar-left">
+        <button id="sidebar-toggle" class="icon-button mobile-only" aria-label="Toggle navigation menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <a class="brand" href="#triage" data-route="triage">
+          <span class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+          <span class="brand-text">Care Navigation<br /><strong>Navigator</strong></span>
+        </a>
+        <div class="workspace-divider"></div>
+        <span id="workspace-title" class="workspace-title">Patient Portal</span>
+      </div>
+
+      <div class="topbar-right">
+        <!-- Prototype Demo Role Selector -->
+        <div class="role-selector-wrap" title="Prototype Demo Role Selector (Non-production demo role navigation)">
+          <label for="role-selector" class="sr-only">Switch Experience Role</label>
+          <select id="role-selector" class="role-select-input" aria-label="Switch User Role Experience">
+            <option value="PATIENT" selected>Role: Patient Experience</option>
+            <option value="CARE_MANAGER">Role: Care Manager Workspace</option>
+            <option value="PAYER_ADMIN">Role: Payer Administrator</option>
+          </select>
+        </div>
+
+        <button id="chat-toggle" class="button ghost flex-center">
+          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Care Copilot</span>
+        </button>
+      </div>
     </header>
 
-    <main class="page-shell">
-      <section id="dashboard-view" class="view active">
-        <div class="hero"><div><p class="eyebrow">Care management workspace</p><h1>Focus outreach where historical utilization patterns signal a need for support.</h1><p>Member prioritization supports proactive care navigation. It does not determine emergency necessity.</p></div><button class="button primary" data-route="cohort">Review member cohort</button></div>
-        <div id="stat-grid" class="stat-grid" aria-live="polite"></div>
-        <div class="two-column"><section class="card"><div class="card-heading"><div><p class="eyebrow">Prioritization queue</p><h2>Members needing review</h2></div><button class="text-button" data-route="cohort">View all</button></div><div id="priority-list" class="member-list"></div></section><section class="card"><div class="card-heading"><div><p class="eyebrow">Care access signal</p><h2>Patterns over time</h2></div></div><div id="time-pattern" class="bar-chart"></div><p class="muted">Patterns indicate when care-navigation access may be most useful. They do not determine the appropriate setting for a current symptom.</p></section></div>
-      </section>
+    <!-- Main Application Layout Shell -->
+    <div class="app-layout">
+      <!-- Sidebar Navigation Container -->
+      <aside id="sidebar-nav" class="sidebar">
+        <div id="nav-section-title" class="sidebar-section-title">My Care</div>
+        <nav id="nav-container" aria-label="Role navigation">
+          <!-- Dynamic Role Navigation Items populated by app.js -->
+        </nav>
+        <div class="sidebar-footer">
+          <div class="data-status-chip">
+            <span class="status-indicator"></span> PostgreSQL System of Record
+          </div>
+        </div>
+      </aside>
 
-      <section id="cohort-view" class="view">
-        <div class="section-heading"><div><p class="eyebrow">Member cohort</p><h1>Historical utilization prioritization</h1><p>Use this list to organize outreach and care-navigation support.</p></div></div>
-        <div class="card filters"><label>Search members<input id="member-search" type="search" placeholder="Name, ID, condition, or ZIP" /></label><label>Priority<select id="risk-filter"><option value="">All priority levels</option><option value="HIGH">High</option><option value="MODERATE">Moderate</option><option value="LOW">Low</option></select></label></div>
-        <section class="card table-card"><div id="member-table" class="table-wrap"></div></section>
-      </section>
+      <!-- Main Content Area -->
+      <main class="main-content">
 
-      <section id="providers-view" class="view">
-        <div class="section-heading"><div><p class="eyebrow">Care options</p><h1>Local care-navigation directory</h1><p>Availability and costs are informational; emergency care is always appropriate for an emergency.</p></div></div>
-        <div class="card filters"><label>Care type<select id="provider-type"><option value="ALL">All options</option><option value="URGENT_CARE">Urgent care</option><option value="TELEHEALTH">Telehealth</option><option value="PRIMARY_CARE">Primary care</option><option value="RETAIL_CLINIC">Retail clinic</option></select></label><label>Maximum distance<select id="provider-distance"><option value="">Any distance</option><option value="2">Within 2 miles</option><option value="5">Within 5 miles</option><option value="10">Within 10 miles</option></select></label></div>
-        <div id="provider-grid" class="provider-grid"></div>
-      </section>
+        <!-- VIEW 1: PATIENT MY HEALTH & TRIAGE -->
+        <section id="triage-view" class="view active">
+          <div class="page-header">
+            <div>
+              <p id="triage-eyebrow" class="eyebrow">Direct Symptom Screening</p>
+              <h1 id="triage-title">How can we help you today?</h1>
+              <p id="triage-subtitle" class="subtitle">Tell us what you're experiencing and we'll help you understand the safest next step.</p>
+            </div>
+          </div>
 
-      <section id="triage-view" class="view"><div class="section-heading"><div><p class="eyebrow">Safety-first triage</p><h1>Find appropriate care options</h1><p>This guidance never replaces emergency services. When in doubt about an emergency, call 911 or go to the emergency department.</p></div></div><div class="two-column triage-layout"><form id="triage-form" class="card form-card"><label>What is happening?<textarea id="chief-complaint" required placeholder="Describe the concern in your own words"></textarea></label><label>How long has this been happening?<select id="symptom-duration"><option>Today</option><option>1–3 days</option><option>More than 3 days</option></select></label><fieldset><legend>Emergency warning signs</legend><label class="checkbox"><input type="checkbox" name="red-flag" value="Chest pain or pressure" /> Chest pain or pressure</label><label class="checkbox"><input type="checkbox" name="red-flag" value="Severe trouble breathing" /> Severe trouble breathing</label><label class="checkbox"><input type="checkbox" name="red-flag" value="Stroke symptoms" /> Stroke symptoms</label><label class="checkbox"><input type="checkbox" name="red-flag" value="Loss of consciousness" /> Loss of consciousness</label></fieldset><button class="button primary" type="submit">Review care options</button></form><section id="triage-result" class="card result-panel"><p class="muted">Share a concern to receive safety-first navigation guidance.</p></section></div></section>
+          <div class="two-column triage-grid">
+            <!-- Symptom Intake Form Card -->
+            <div class="card intake-card">
+              <div class="card-header">
+                <h2 id="intake-header-title">Symptom Assessment</h2>
+                <p class="muted">Enter details below to generate a safety screening and care recommendation.</p>
+              </div>
 
-      <section id="care-plan-view" class="view"><div class="section-heading"><div><p class="eyebrow">Care plan</p><h1>Prepare a proactive outreach plan</h1><p>Generated plans support care coordination and do not determine emergency necessity.</p></div></div><div class="two-column"><form id="care-plan-form" class="card form-card"><label>Member<select id="care-plan-member"></select></label><label>Care manager notes<textarea id="care-plan-notes" placeholder="Optional context for the plan"></textarea></label><button class="button primary" type="submit">Generate care plan</button></form><section id="care-plan-result" class="card result-panel"><p class="muted">Select a member to generate a care-navigation plan.</p></section></div></section>
-    </main>
+              <form id="triage-form" class="triage-form-content">
+                <!-- Member Selector (Shown ONLY for Care Managers & Payers) -->
+                <div class="form-group role-sensitive care-manager-only payer-only">
+                  <label for="triage-member-select">Select Member / Beneficiary (Optional)</label>
+                  <select id="triage-member-select" class="input-control">
+                    <option value="">Anonymous Patient Session (Unlinked)</option>
+                  </select>
+                  <span class="field-help">Linking a beneficiary incorporates ML risk context and saves encounter history.</span>
+                </div>
 
-    <aside id="member-panel" class="side-panel" aria-hidden="true"><div class="panel-header"><h2>Member profile</h2><button class="icon-button" data-close-panel aria-label="Close member profile">×</button></div><div id="member-detail"></div></aside><div id="panel-backdrop" class="backdrop"></div>
-    <aside id="chat-panel" class="chat-panel" aria-hidden="true"><div class="panel-header"><div><p class="eyebrow">Care copilot</p><h2>Ask a workflow question</h2></div><button class="icon-button" data-close-chat aria-label="Close chat">×</button></div><div id="chat-messages" class="chat-messages"><p class="chat-message assistant">I can help organize care-navigation outreach. Emergency care should never be discouraged when symptoms may be urgent.</p></div><form id="chat-form" class="chat-form"><input id="chat-input" required placeholder="Ask about outreach or patterns" /><button class="button primary">Send</button></form></aside>
+                <div class="form-group">
+                  <label for="chief-complaint">What are you experiencing? *</label>
+                  <textarea id="chief-complaint" class="input-control" required rows="3" placeholder="e.g. Mild cough, sprained ankle, or medication checkup..."></textarea>
+                </div>
+
+                <div class="form-group">
+                  <label for="symptom-duration">How long has this been happening?</label>
+                  <select id="symptom-duration" class="input-control">
+                    <option value="Today">Today (Started recently)</option>
+                    <option value="1–3 days">1 to 3 days</option>
+                    <option value="More than 3 days">More than 3 days</option>
+                  </select>
+                </div>
+
+                <fieldset class="red-flag-fieldset">
+                  <legend>Emergency Warning Signs (Select if applicable)</legend>
+                  <div class="checkbox-grid">
+                    <label class="checkbox-card">
+                      <input type="checkbox" name="red-flag" value="Chest pain or pressure" />
+                      <span class="checkbox-label">Chest pain, tightness, or pressure</span>
+                    </label>
+                    <label class="checkbox-card">
+                      <input type="checkbox" name="red-flag" value="Severe trouble breathing" />
+                      <span class="checkbox-label">Acute shortness of breath</span>
+                    </label>
+                    <label class="checkbox-card">
+                      <input type="checkbox" name="red-flag" value="Stroke symptoms" />
+                      <span class="checkbox-label">Numbness, face drooping, or slurred speech</span>
+                    </label>
+                    <label class="checkbox-card">
+                      <input type="checkbox" name="red-flag" value="Loss of consciousness" />
+                      <span class="checkbox-label">Fainting, dizziness, or blackout</span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                <div class="form-actions">
+                  <button type="submit" class="button primary large full-width">
+                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>Evaluate Care Guidance</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Assessment / Recommendation Panel -->
+            <div id="triage-result" class="card result-panel-card">
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                </div>
+                <h3>Ready for Symptom Assessment</h3>
+                <p>Describe your symptoms on the left to receive deterministic safety screening and care setting guidance.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 2: PATIENT HEALTH PROFILE (Self-Entry Dashboard) -->
+        <section id="patient-profile-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Patient Profile</p>
+              <h1>My Health Profile</h1>
+              <p class="subtitle">Manage your personal profile and care preferences for navigation sessions.</p>
+            </div>
+          </div>
+
+          <div class="two-column profile-grid" style="margin-bottom: 24px;">
+            <!-- Left: Personal Information -->
+            <div class="card">
+              <div class="card-header">
+                <h2>Personal Information</h2>
+                <p class="muted">Self-entered details (distinguished from Medicare member records).</p>
+              </div>
+              <form id="patient-self-profile-form">
+                <div class="form-group">
+                  <label for="self-patient-name">Full Name *</label>
+                  <input id="self-patient-name" type="text" class="input-control" required placeholder="e.g. Jane Doe" />
+                </div>
+                <div class="filter-row" style="margin-bottom: 0;">
+                  <div class="form-group flex-grow">
+                    <label for="self-patient-age">Age *</label>
+                    <input id="self-patient-age" type="number" min="1" max="120" class="input-control" required placeholder="e.g. 42" />
+                  </div>
+                  <div class="form-group flex-grow">
+                    <label for="self-patient-zip">ZIP / Location *</label>
+                    <input id="self-patient-zip" type="text" class="input-control" required placeholder="e.g. 90210" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="self-patient-contact">Contact Information (Optional)</label>
+                  <input id="self-patient-contact" type="text" class="input-control" placeholder="Email or phone number" />
+                </div>
+                <button type="submit" class="button primary">Save Personal Details</button>
+              </form>
+            </div>
+
+            <!-- Right: Care Preferences & Coverage -->
+            <div class="card">
+              <div class="card-header">
+                <h2>Care Preferences & Coverage</h2>
+                <p class="muted">Set insurance coverage and care access choices.</p>
+              </div>
+              <div class="form-group">
+                <label for="self-patient-insurance">Insurance / Coverage Status</label>
+                <select id="self-patient-insurance" class="input-control">
+                  <option value="Self-Pay / Uninsured">Self-Pay / Uninsured</option>
+                  <option value="Commercial / Employer Plan">Commercial / Employer Insurance</option>
+                  <option value="Medicare">Medicare</option>
+                  <option value="Medicaid">Medicaid</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="self-patient-pref-setting">Preferred Care Setting</label>
+                <select id="self-patient-pref-setting" class="input-control">
+                  <option value="Virtual Telehealth First">Virtual Telehealth First</option>
+                  <option value="Primary Care Clinic">Primary Care Clinic</option>
+                  <option value="Urgent Care Center">Urgent Care Center</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="self-patient-comm">Communication Preference</label>
+                <select id="self-patient-comm" class="input-control">
+                  <option value="Email Updates">Email Updates</option>
+                  <option value="SMS Text Messages">SMS Text Messages</option>
+                  <option value="Phone Call Only">Phone Call Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Recent Care Activity & Current Session -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Recent Care Activity & Active Session</h2>
+              <p class="muted">Active care navigation session overview.</p>
+            </div>
+            <div id="patient-profile-session-info">
+              <p class="muted">No active triage assessment recorded in current session. Visit <strong>My Health</strong> to perform an assessment.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 3: CARE OPTIONS / FIND CARE -->
+        <section id="providers-view" class="view">
+          <div class="page-header">
+            <div>
+              <p id="providers-eyebrow" class="eyebrow">Local Directory</p>
+              <h1 id="providers-title">Find Care Options</h1>
+              <p id="providers-subtitle" class="subtitle">Filter available care settings by type and distance from your location.</p>
+            </div>
+            <div class="demo-banner-chip">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>Demo / Compatibility Provider Directory</span>
+            </div>
+          </div>
+
+          <div class="card filter-card">
+            <div class="filter-row">
+              <div class="filter-group">
+                <label for="provider-type">Care Destination Type</label>
+                <select id="provider-type" class="input-control">
+                  <option value="ALL">All Care Settings</option>
+                  <option value="URGENT_CARE">Urgent Care Center</option>
+                  <option value="TELEHEALTH">24/7 Virtual Telehealth</option>
+                  <option value="PRIMARY_CARE">Primary Care Clinic</option>
+                  <option value="RETAIL_CLINIC">Retail Walk-in Clinic</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="provider-distance">Maximum Distance</label>
+                <select id="provider-distance" class="input-control">
+                  <option value="">Any Distance</option>
+                  <option value="2">Within 2 Miles</option>
+                  <option value="5">Within 5 Miles</option>
+                  <option value="10">Within 10 Miles</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="provider-grid" class="provider-grid-container">
+            <div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading care options...</p></div>
+          </div>
+        </section>
+
+        <!-- VIEW 4: CARE HISTORY VIEW -->
+        <section id="history-view" class="view">
+          <div class="page-header">
+            <div>
+              <p id="history-eyebrow" class="eyebrow">Care Audit Log</p>
+              <h1 id="history-title">My Care History</h1>
+              <p id="history-subtitle" class="subtitle">Review your symptom assessments and recorded care navigation choices.</p>
+            </div>
+          </div>
+
+          <div id="history-member-filter" class="card filter-card role-sensitive care-manager-only payer-only">
+            <div class="filter-row">
+              <div class="filter-group flex-grow">
+                <label for="history-patient-select">Select Member or Session ID</label>
+                <select id="history-patient-select" class="input-control">
+                  <option value="">Select a member...</option>
+                </select>
+              </div>
+              <div class="filter-group button-align">
+                <button id="load-history-btn" class="button primary">
+                  <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <span>Load History</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="history-timeline-container" class="card history-card">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <h3 id="history-empty-title">No Care History Loaded</h3>
+              <p id="history-empty-desc">Complete a symptom assessment on <strong>My Health</strong> to start building your care timeline.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 5: POPULATION OVERVIEW DASHBOARD (Payer & Care Manager) -->
+        <section id="dashboard-view" class="view">
+          <div class="page-header">
+            <div>
+              <p id="dashboard-eyebrow" class="eyebrow">Operations Console</p>
+              <h1 id="dashboard-title">Population Health Overview</h1>
+              <p id="dashboard-subtitle" class="subtitle">Database-backed aggregate utilization metrics and clinical prioritization signals.</p>
+            </div>
+          </div>
+
+          <!-- KPI Metric Cards Grid -->
+          <div id="stat-grid" class="stat-grid-container">
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+          </div>
+
+          <div class="two-column dashboard-grid">
+            <!-- Prioritization Queue Table / List -->
+            <div class="card">
+              <div class="card-header flex-between">
+                <div>
+                  <p class="eyebrow">Clinical Queue</p>
+                  <h2>Prioritization Queue</h2>
+                </div>
+                <button class="text-button" data-route="cohort">View All Cohort &rarr;</button>
+              </div>
+              <div id="priority-list" class="member-queue-list">
+                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+              </div>
+            </div>
+
+            <!-- Historical Time of Day Signals -->
+            <div class="card">
+              <div class="card-header">
+                <p class="eyebrow">Care Access Patterns</p>
+                <h2>Historical Time of Day Signal</h2>
+              </div>
+              <div id="time-pattern" class="bar-chart-container">
+                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+              </div>
+              <p class="muted caption-note">Time patterns illustrate historical ED access peaks; they do not dictate emergency necessity for current symptoms.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 6: MEMBER COHORT (Care Manager & Payer Workspace) -->
+        <section id="cohort-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Beneficiary Management</p>
+              <h1>Member Population Directory</h1>
+              <p class="subtitle">Complete database-backed Medicare cohort with ML risk stratification.</p>
+            </div>
+          </div>
+
+          <!-- 4-Step Primary Care Longitudinal Workflow Card -->
+          <div class="card workflow-card" style="margin-bottom: 24px; background: #f0f7f7; border-color: #bce3df;">
+            <h3 style="margin: 0 0 6px 0; color: var(--teal); font-size: 16px;">Primary Care Connection Workflow</h3>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 10px;">
+              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+                <strong style="color: var(--deep); font-size: 12px;">1. Review</strong>
+                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Identify ED Utilization</p>
+              </div>
+              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+                <strong style="color: var(--deep); font-size: 12px;">2. Outreach</strong>
+                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Care Manager Contact</p>
+              </div>
+              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+                <strong style="color: var(--deep); font-size: 12px;">3. PCP Connect</strong>
+                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Primary Care Link</p>
+              </div>
+              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
+                <strong style="color: var(--deep); font-size: 12px;">4. Follow Up</strong>
+                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Longitudinal Care</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card filter-card">
+            <div class="filter-row">
+              <div class="filter-group flex-grow">
+                <label for="member-search">Search Beneficiaries</label>
+                <div class="search-input-wrap">
+                  <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input id="member-search" type="search" class="input-control with-icon" placeholder="Search by name, Beneficiary ID, condition..." />
+                </div>
+              </div>
+              <div class="filter-group">
+                <label for="risk-filter">Intervention Priority</label>
+                <select id="risk-filter" class="input-control">
+                  <option value="">All Priorities</option>
+                  <option value="HIGH">High Priority</option>
+                  <option value="MODERATE">Moderate Priority</option>
+                  <option value="LOW">Low Priority</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card table-card-wrap">
+            <div id="member-table" class="table-responsive">
+              <div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading member population...</p></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 7: CARE COORDINATOR PLAN -->
+        <section id="care-plan-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Outreach Coordination</p>
+              <h1>Care Navigation Plan Generator</h1>
+              <p class="subtitle">Generate proactive care management intervention plans for high-risk beneficiaries.</p>
+            </div>
+          </div>
+
+          <div class="two-column">
+            <form id="care-plan-form" class="card form-card">
+              <div class="form-group">
+                <label for="care-plan-member">Target Beneficiary *</label>
+                <select id="care-plan-member" class="input-control" required>
+                  <option value="">Select a member...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="care-plan-notes">Care Manager Clinical Notes (Optional)</label>
+                <textarea id="care-plan-notes" class="input-control" rows="4" placeholder="Enter relevant clinical background, SDOH barriers, or outreach goals..."></textarea>
+              </div>
+              <button type="submit" class="button primary large">
+                <span>Generate Plan</span>
+              </button>
+            </form>
+
+            <div id="care-plan-result" class="card result-panel-card">
+              <div class="empty-state">
+                <div class="empty-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                </div>
+                <h3>No Plan Generated</h3>
+                <p>Select a beneficiary on the left to prepare an outreach care plan.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- MEMBER PROFILE SIDE DRAWER (Wide 540px Drawer for Care Manager & Payer Only) -->
+    <aside id="member-panel" class="side-panel" aria-hidden="true">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Beneficiary Profile</p>
+          <h2>Member Details</h2>
+        </div>
+        <button class="icon-button" data-close-panel aria-label="Close profile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="member-detail" class="panel-content">
+        <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+      </div>
+    </aside>
+
+    <!-- CARE COPILOT CHAT DRAWER -->
+    <aside id="chat-panel" class="chat-panel" aria-hidden="true">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Assistant Workspace</p>
+          <h2>Care Copilot</h2>
+        </div>
+        <button class="icon-button" data-close-chat aria-label="Close chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="chat-messages" class="chat-messages">
+        <div class="chat-message assistant">
+          <p>Hello! I am your Care Copilot. I can help answer workflow questions and summarize care options. Emergency symptoms should always be evaluated with 911 or an Emergency Room immediately.</p>
+        </div>
+      </div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" class="input-control" required placeholder="Ask a care navigation question..." />
+        <button type="submit" class="button primary">Send</button>
+      </form>
+    </aside>
+
+    <!-- Modal Backdrop -->
+    <div id="panel-backdrop" class="backdrop"></div>
+
+    <!-- Application Script Entry Point -->
     <script type="module" src="/app.js"></script>
   </body>
 </html>

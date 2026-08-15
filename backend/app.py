@@ -4,7 +4,12 @@ from pathlib import Path
 
 from flask import Flask, abort, send_from_directory
 
+from backend.routes.analytics import analytics_blueprint
 from backend.routes.ml_results import ml_results_blueprint
+from backend.routes.navigation import navigation_blueprint
+from backend.routes.patients import patients_blueprint
+from backend.routes.providers import providers_blueprint
+from backend.routes.triage import triage_blueprint
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +23,11 @@ def create_app() -> Flask:
         static_folder=None,
     )
     app.register_blueprint(ml_results_blueprint)
+    app.register_blueprint(patients_blueprint)
+    app.register_blueprint(analytics_blueprint)
+    app.register_blueprint(providers_blueprint)
+    app.register_blueprint(triage_blueprint)
+    app.register_blueprint(navigation_blueprint)
 
     @app.get("/")
     def frontend_index():

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import BigInteger, DateTime, Identity, Index, String, Text
+from sqlalchemy import BigInteger, DateTime, Identity, Index, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,9 @@ from backend.database import Base
 if TYPE_CHECKING:
     from backend.models.anomaly import UtilizationAnomalyResult
     from backend.models.prediction import XGBoostUtilizationPrediction
+
+
+JSONType = JSONB().with_variant(JSON, "sqlite")
 
 
 class ModelRun(Base):
@@ -33,9 +36,9 @@ class ModelRun(Base):
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     target_definition: Mapped[str | None] = mapped_column(Text, nullable=True)
-    leakage_exclusions: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    configuration: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    leakage_exclusions: Mapped[list[str] | None] = mapped_column(JSONType, nullable=True)
+    configuration: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
+    metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
     artifact_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     xgboost_predictions: Mapped[list["XGBoostUtilizationPrediction"]] = relationship(
