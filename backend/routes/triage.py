@@ -1,10 +1,18 @@
-"""Public API routes for symptom triage endpoints."""
+"""Public API routes for symptom triage endpoints.
+
+The anonymous/basic symptom-assessment path stays fully public and
+unauthenticated, including when the deterministic Safety Engine detects an
+emergency. If the request additionally supplies a patientId, member-linked
+ML enrichment (patientContext / proactiveRecommendation) is only resolved
+for an authenticated PAYER caller -- see triage_service.process_triage_request.
+"""
 
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
 from backend.services import triage_service
+from backend.services.auth_service import get_current_user
 
 triage_blueprint = Blueprint("triage", __name__, url_prefix="/api/triage")
 
@@ -19,5 +27,10 @@ def triage():
     if data is None:
         data = {}
 
-    response = triage_service.process_triage_request(data)
+    current_user = get_current_user()
+    allow_member_linkage = current_user is not None and current_user.role == "PAYER"
+
+    response = triage_service.process_triage_request(
+        data, allow_member_linkage=allow_member_linkage
+    )
     return jsonify(response)
