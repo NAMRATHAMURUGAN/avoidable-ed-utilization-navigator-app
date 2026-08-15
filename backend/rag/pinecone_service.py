@@ -67,3 +67,25 @@ class PineconeKnowledgeIndex:
         if upserted is not None and upserted != len(records):
             raise PineconeValidationError(f"Pinecone upsert reported {upserted} records; expected {len(records)}.")
         return len(records)
+
+    def query(self, vector: Sequence[float], *, top_k: int) -> list[Any]:
+        """Search only the configured shared knowledge namespace without writing."""
+        if len(vector) != self.settings.embedding_dimension:
+            raise PineconeValidationError(
+                f"Query vector dimension {len(vector)} does not match RAG_EMBEDDING_DIMENSION "
+                f"{self.settings.embedding_dimension}."
+            )
+        index = self.client.Index(self.settings.pinecone_index_name)
+        response = index.query(
+            vector=list(vector),
+            top_k=top_k,
+            namespace=self.settings.pinecone_namespace,
+            include_metadata=True,
+            include_values=False,
+        )
+        matches = _field(response, "matches")
+        if matches is None:
+            return []
+        if not isinstance(matches, Sequence) or isinstance(matches, (str, bytes)):
+            raise PineconeValidationError("Pinecone query response contains malformed matches.")
+        return list(matches)

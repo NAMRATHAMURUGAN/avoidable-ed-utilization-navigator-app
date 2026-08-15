@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from types import ModuleType, SimpleNamespace
 from pathlib import Path
 
 import pytest
 
 from backend.config import RagSettings, get_rag_settings
-from backend.rag.embeddings import EmbeddingValidationError, validate_embeddings
+from backend.rag.embeddings import EmbeddingValidationError, GeminiEmbedder, validate_embeddings
 from backend.rag.ingestion import ingest_knowledge_base
 from backend.rag.knowledge_base import (
     KnowledgeBaseValidationError,
@@ -116,6 +118,72 @@ def test_embedding_dimension_validation() -> None:
         validate_embeddings([[0.1, 0.2]], 3, expected_count=1)
     with pytest.raises(EmbeddingValidationError, match="count"):
         validate_embeddings([[0.1, 0.2, 0.3]], 3, expected_count=2)
+
+
+def _mock_google_genai(monkeypatch: pytest.MonkeyPatch, vectors: list[list[float]]) -> list[dict[str, object]]:
+    """Install a no-network SDK double and expose the embed request payload."""
+    calls: list[dict[str, object]] = []
+
+    class FakePart:
+        @classmethod
+        def from_text(cls, *, text: str) -> dict[str, str]:
+            return {"text": text}
+
+    class FakeContent:
+        def __init__(self, *, parts: list[dict[str, str]]) -> None:
+            self.parts = parts
+
+    class FakeModels:
+        def embed_content(self, **kwargs: object) -> SimpleNamespace:
+            calls.append(kwargs)
+            return SimpleNamespace(embeddings=[SimpleNamespace(values=vector) for vector in vectors])
+
+    class FakeClient:
+        def __init__(self, *, api_key: str) -> None:
+            self.models = FakeModels()
+
+    fake_types = SimpleNamespace(
+        Content=FakeContent,
+        Part=FakePart,
+        EmbedContentConfig=lambda **kwargs: kwargs,
+    )
+    fake_genai = ModuleType("google.genai")
+    fake_genai.Client = FakeClient
+    fake_genai.types = fake_types
+    fake_google = ModuleType("google")
+    fake_google.genai = fake_genai
+    monkeypatch.setitem(sys.modules, "google", fake_google)
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    return calls
+
+
+def test_gemini_embedder_single_text_returns_one_768_dimension_embedding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _mock_google_genai(monkeypatch, [[0.0] * 768])
+    result = GeminiEmbedder(api_key="test", model="gemini-embedding-2", dimension=768).embed(["one text"])
+    assert result == [[0.0] * 768]
+    assert len(calls) == 1
+    assert len(calls[0]["contents"]) == 1
+
+
+def test_gemini_embedder_sends_each_text_as_separate_content_and_returns_matching_embeddings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _mock_google_genai(monkeypatch, [[float(index)] * 768 for index in range(3)])
+    result = GeminiEmbedder(api_key="test", model="gemini-embedding-2", dimension=768).embed(["first", "second", "third"])
+    assert len(result) == 3
+    assert all(len(vector) == 768 for vector in result)
+    contents = calls[0]["contents"]
+    assert [content.parts[0]["text"] for content in contents] == ["first", "second", "third"]
+    assert calls[0]["config"] == {"output_dimensionality": 768}
+
+
+def test_gemini_embedder_raises_for_mismatched_response_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_google_genai(monkeypatch, [[0.0] * 768])
+    embedder = GeminiEmbedder(api_key="test", model="gemini-embedding-2", dimension=768)
+    with pytest.raises(EmbeddingValidationError, match="count"):
+        embedder.embed(["first", "second"])
 
 
 def test_invalid_chunk_metadata_is_rejected() -> None:

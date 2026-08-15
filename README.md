@@ -12,7 +12,7 @@ A safety-first healthcare navigation product with two experiences: a consumer-fa
 - **Safety Engine**: `backend/safety/engine.py` and `backend/safety/rules.py` are a deterministic, dependency-free rule engine (no ML, no database, no network) that is the hard safety boundary for the `/api/triage` endpoint. It is a verified behavioral parity port of the original TypeScript engine in `src/services/safetyEngine.ts`.
 - **Frontend**: Plain HTML5, CSS3, and vanilla ES module JavaScript (`public/`), served directly by Flask. No build step, framework, or component library.
 - **Provider / location discovery**: Not yet implemented against a real data source. The "Find care near you" screen shows an honest "integration pending configuration" state rather than fabricated hospitals, clinics, or appointment slots. It is architected to be backed by Google Maps / Places once credentials are configured — no such integration exists yet.
-- **RAG / knowledge base**: The approved Markdown knowledge base can be explicitly embedded and indexed offline; it is not part of Flask startup and no retrieval or Gemini response generation is implemented. See [`docs/rag_ingestion.md`](docs/rag_ingestion.md).
+- **RAG / knowledge base**: The approved Markdown knowledge base can be embedded/indexed offline and retrieved from Pinecone through an isolated RAG service. It is not part of Flask startup; Gemini response generation and Flask integration are not implemented. See [`docs/rag_ingestion.md`](docs/rag_ingestion.md).
 
 ## Product experiences
 
@@ -139,7 +139,7 @@ rag_documents/            Approved Markdown sources for offline RAG knowledge-ba
 | Payer population analytics (members, ED visits, ED spend), risk stratification | Implemented |
 | Google Maps / Places provider discovery | Planned — integration boundary only, no credentials configured |
 | RAG knowledge-base ingestion | Implemented offline — Markdown parsing, embeddings, and Pinecone upsert; no live ingestion without configured credentials/index |
-| Gemini-grounded RAG responses / Flask integration | Planned — no generation, retrieval, or RAG endpoint yet |
+| Gemini-grounded RAG responses / Flask integration | Planned — no generation or RAG endpoint yet |
 
 ## GitHub guidance
 

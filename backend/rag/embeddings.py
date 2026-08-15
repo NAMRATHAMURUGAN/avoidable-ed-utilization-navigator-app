@@ -24,9 +24,15 @@ class GeminiEmbedder:
         except ImportError as error:
             raise RuntimeError("google-genai is required for RAG ingestion; install requirements.txt first.") from error
         client = genai.Client(api_key=self.api_key)
+        # Gemini Embedding 2 aggregates a list of text parts into one vector.
+        # Separate Content objects preserve the one-chunk-to-one-vector mapping.
+        contents = [
+            types.Content(parts=[types.Part.from_text(text=text)])
+            for text in texts
+        ]
         response = client.models.embed_content(
             model=self.model,
-            contents=list(texts),
+            contents=contents,
             config=types.EmbedContentConfig(output_dimensionality=self.dimension),
         )
         vectors = [list(embedding.values) for embedding in response.embeddings]
