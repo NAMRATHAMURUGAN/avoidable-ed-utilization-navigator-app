@@ -17,6 +17,7 @@ from backend.database import session_scope
 from backend.models.encounter import TriageEncounter
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+from backend.repositories.model_run_repository import ModelRunRepository
 from backend.safety.engine import evaluate_safety
 from backend.services import provider_service
 from backend.services.navigation_service import CareNavigationService
@@ -51,7 +52,17 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
 
     if patient_id_raw is not None:
         m_repo = MemberRepository(session)
-        member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
+        run_repo = ModelRunRepository(session)
+        # Explicitly resolve the latest model run for each model type, mirroring
+        # patient_service.py, so the linked prediction/anomaly always reflect the
+        # current model run rather than falling back to row-insertion order.
+        xgb_run = run_repo.get_latest("xgboost")
+        anomaly_run = run_repo.get_latest("isolation_forest")
+        member_res = m_repo.get_combined_result_by_id_or_bene(
+            str(patient_id_raw),
+            xgb_model_run_id=xgb_run.model_run_id if xgb_run else None,
+            anomaly_model_run_id=anomaly_run.model_run_id if anomaly_run else None,
+        )
         if member_res is not None:
             member_id = member_res.member.id
             anal_dict = member_analytical_result_to_dict(member_res)
@@ -69,6 +80,7 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
                 "patientId": str(member_res.member.id),
                 "beneficiaryId": member_res.member.bene_id,
                 "riskLevel": anal_dict["riskLevel"],
+                "riskLevelInterpretation": anal_dict["riskLevelInterpretation"],
                 "highUtilizationProbability": xgb_prob,
                 "anomalyFlag": anomaly_flag,
                 "edVisitCount12m": anal_dict["edVisitCount12m"],
