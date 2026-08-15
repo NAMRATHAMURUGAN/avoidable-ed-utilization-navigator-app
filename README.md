@@ -1,136 +1,138 @@
-# Care Navigation Navigator
+# Avoidable ED Utilization Navigator
 
-A safety-first healthcare utilization analytics prototype. It helps care-management teams identify members with historical high emergency-department utilization patterns so that they can prioritize proactive outreach and care navigation.
+A safety-first healthcare navigation product with two experiences: a consumer-facing **Patient / Member** app for symptom triage and care navigation, and a **Payer** analytics workspace for population-level ED utilization insight. A deterministic Python Safety Engine is the authoritative emergency-detection boundary in both experiences — it is never influenced by ML risk scores, cost optimization, or provider ranking.
 
-> The model does **not** determine whether emergency care is medically necessary. It does **not** recommend that a member avoid emergency care. For signs of an emergency, members should call 911 or seek emergency care immediately.
+> The system does **not** determine whether emergency care is medically necessary and does **not** recommend that anyone avoid emergency care. For signs of an emergency, always call 911 or go to the nearest emergency room.
 
 ## Current status
 
-This repository is ready to share as a frontend and offline-ML milestone.
+- **Backend**: Flask (`backend/app.py`) serves both the JSON API and the static frontend. This has fully replaced the earlier Express/TypeScript prototype (`server.ts`, `src/`), which remains in the repository as superseded reference code but is not run by the current application.
+- **Database**: PostgreSQL, via SQLAlchemy models in `backend/models/`. The database is populated from offline-trained ML artifacts by `backend/ingest_ml_data.py` and currently holds real member, utilization, XGBoost prediction, and anomaly data (~8,671 members and related records).
+- **ML**: XGBoost (utilization-risk classification) and Isolation Forest (anomaly detection) are trained offline (`src/train_risk_model.py`, `src/train_anomaly_model.py`) and their outputs are ingested into Postgres. The frontend never shows raw probabilities or anomaly scores — only categorical risk badges (High / Moderate / Low), and only in the Payer experience.
+- **Safety Engine**: `backend/safety/engine.py` and `backend/safety/rules.py` are a deterministic, dependency-free rule engine (no ML, no database, no network) that is the hard safety boundary for the `/api/triage` endpoint. It is a verified behavioral parity port of the original TypeScript engine in `src/services/safetyEngine.ts`.
+- **Frontend**: Plain HTML5, CSS3, and vanilla ES module JavaScript (`public/`), served directly by Flask. No build step, framework, or component library.
+- **Provider / location discovery**: Not yet implemented against a real data source. The "Find care near you" screen shows an honest "integration pending configuration" state rather than fabricated hospitals, clinics, or appointment slots. It is architected to be backed by Google Maps / Places once credentials are configured — no such integration exists yet.
+- **RAG / knowledge base**: Not implemented. `rag_documents/` and `notebooks/08_rag_preparation.ipynb` are empty scaffolding for a future retrieval-augmented explanation layer that would sit behind the Safety Engine. `google-genai` and `pinecone-client` are listed in `requirements.txt` for that future work but are not wired into any running code path today.
 
-- The user interface is a responsive, plain HTML/CSS/JavaScript application.
-- Express provides the API and serves the static site.
-- API responses currently use synthetic member and provider data from `src/data/mockCmsData.ts`.
-- The XGBoost model is trained offline against the processed feature dataset; it is not yet connected to the live API or UI.
-- No production database, authentication, or persistence logic has been implemented yet.
+## Product experiences
+
+**Patient / Member** — a consumer navigation flow: enter your own profile (no CMS beneficiary lookup required), run a safety-first symptom assessment, see clear emergency guidance when warranted, and review your own care history. Never shown: the member population list, ML probabilities/anomaly scores, or payer analytics.
+
+**Payer** — a population analytics workspace: aggregate ED utilization and spend (real, database-backed), risk-stratified member population, and audit trail of care navigation decisions. Backed by the same Postgres data as the Patient experience, but scoped to population-level and operational views.
 
 ## Architecture
 
 ```text
-public/ (HTML, CSS, JavaScript)
+public/ (HTML, CSS, vanilla JavaScript ES modules)
         |
         v
-Express API (server.ts) ----> synthetic API data (current milestone)
+Flask API + static server (backend/app.py)
+        |
+        +--> backend/routes/*  -> backend/services/* -> backend/repositories/* -> PostgreSQL
+        |
+        +--> backend/safety/engine.py  (deterministic emergency-detection boundary)
 
-Python ML pipeline (offline)
-processed_data/utilization_features.csv --> XGBoost model artifacts
+Python ML pipeline (offline, not part of the live request path)
+processed_data/utilization_features.csv --> XGBoost + Isolation Forest artifacts (ml_models/)
+        --> backend/ingest_ml_data.py --> PostgreSQL
 ```
 
 ## Tech stack
 
-- Frontend: plain HTML5, CSS3, and modular vanilla JavaScript
-- Application server: Express with TypeScript
+- Frontend: plain HTML5, CSS3, vanilla ES module JavaScript — no framework or build step
+- Backend: Flask (Python)
+- Database: PostgreSQL via SQLAlchemy
 - ML/data pipeline: Python, pandas, NumPy, scikit-learn, XGBoost
-- Optional AI integration: Google GenAI, controlled by `GEMINI_API_KEY`
-- Dataset format: CSV member, inpatient, outpatient, and engineered feature files
-
-React, Vite, Tailwind, Motion, Recharts, and their UI component sources have been removed. The project now has no frontend build framework.
+- Planned (not yet implemented): Google Maps / Places for provider discovery; a RAG/knowledge-base layer for grounded patient-facing explanations
 
 ## Run locally
 
-Prerequisites:
-
-- Node.js 22 or later
-- Python 3.12 or later for the data and ML workflow
-
-Install JavaScript dependencies and start the application:
-
-```bash
-npm install
-npm run dev
-```
-
-Then open `http://localhost:3000`.
-
-For a production build:
-
-```bash
-npm run build
-npm start
-```
-
-## UI features
-
-- Population overview and historical-utilization dashboard
-- Searchable member cohort and member detail panel
-- Care-navigation provider directory
-- Safety-first symptom triage interface
-- Care-plan generation workflow
-- Care-manager copilot chat panel
-
-The UI calls the existing Express endpoints under `/api/*`.
-
-## ML workflow
-
-Create a Python environment and install dependencies:
+Prerequisites: Python 3.12+, a PostgreSQL database.
 
 ```bash
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-The baseline model identifies members in the top decile of historical ED visit counts:
+Set `DATABASE_URL` in a `.env` file (see `.env.example`), then initialize the schema and ingest ML results:
+
+```bash
+.venv\Scripts\python backend\initialize_database.py
+.venv\Scripts\python backend\ingest_ml_data.py
+```
+
+Start the app:
+
+```bash
+.venv\Scripts\python backend\app.py
+```
+
+Then open `http://localhost:5000`.
+
+## Run tests
+
+The Postgres-backed and in-memory-SQLite test suites live under `backend/tests/`; ingestion-boundary tests live under `tests/`. A plain `pytest` run only discovers `tests/` by default (see `pytest.ini`), so run the backend suite explicitly:
+
+```bash
+.venv\Scripts\python -m pytest backend/tests
+.venv\Scripts\python -m pytest tests
+```
+
+`backend/tests/test_postgres_verification.py` and `tests/test_ingest_postgres_integration.py` are opt-in and require a configured `DATABASE_URL` (the latter also requires `RUN_POSTGRES_INGESTION_TESTS=1`); both skip cleanly otherwise.
+
+## ML workflow
 
 ```bash
 .venv\Scripts\python src\train_risk_model.py
+.venv\Scripts\python src\train_anomaly_model.py
 ```
 
-This produces the baseline model and related outputs locally:
-
-- `ml_models/xgboost_risk_model.pkl`
-- `ml_models/xgboost_feature_importance.csv`
-- `processed_data/risk_predictions.csv`
-
-The tuned experiment remains isolated in `src/train_risk_model_tuned.py`. The baseline pipeline and baseline artifacts are the current reference implementation.
+These produce the model artifacts in `ml_models/` and prediction/anomaly CSVs in `processed_data/`, which `backend/ingest_ml_data.py` loads into PostgreSQL.
 
 ### Leakage controls
 
-The baseline model excludes these from training features:
-
-- `BENE_ID`
-- `ed_visit_count` (used to create the proxy label)
-- `total_ed_related_cost` (a direct aggregate of ED encounters)
-
-The tuned experiment additionally excludes ED-count-derived engineered features. This keeps the model focused on other historical utilization patterns rather than target leakage.
+The baseline risk model excludes these from training features: `BENE_ID`, `ed_visit_count` (used to build the proxy label), and `total_ed_related_cost` (a direct aggregate of ED encounters). The tuned experiment (`src/train_risk_model_tuned.py`) additionally excludes ED-count-derived engineered features.
 
 ## Data workflow
 
-Raw and processed CSV data are intentionally ignored by Git because the claims-derived files are large. Recreate local feature data with:
+Raw and processed CSV data are intentionally ignored by Git (claims-derived files are large). Recreate local feature data with:
 
 ```bash
 .venv\Scripts\python scratch\run_data_cleaning_safe.py
 .venv\Scripts\python scratch\build_full_utilization_features.py
 ```
 
-Both scripts use project-relative paths.
-
 ## Project layout
 
 ```text
-public/                  Static plain HTML/CSS/JavaScript application
-server.ts                Express API and static-site server
-src/data/                Synthetic API data used by the current UI milestone
-src/types.ts             Express API TypeScript types
-src/train_risk_model.py  Baseline offline XGBoost training pipeline
+public/                  Live frontend: plain HTML/CSS/vanilla JavaScript
+backend/                 Flask API, services, repositories, SQLAlchemy models, Safety Engine
+backend/safety/          Deterministic emergency-detection boundary (do not weaken)
+backend/tests/           API, safety-engine, and navigation-history test suites
+tests/                   ML ingestion boundary and Postgres integration tests
+src/train_*.py           Offline ML training pipelines (XGBoost, Isolation Forest)
+src/services/            Superseded TypeScript reference implementation (not run)
+server.ts                Superseded Express prototype (not run; kept for reference)
 scratch/                 Reproducible data cleaning and feature-building scripts
 processed_data/          Local generated cleaned data, features, and predictions
-ml_models/               Local generated model artifacts and reports
+ml_models/                Local generated model artifacts and reports
 datasets/                Local raw source CSV datasets
-notebooks/               Exploration and validation notebooks
+notebooks/                Exploration, validation, and RAG-preparation notebooks (08 is a placeholder)
+rag_documents/            Placeholder directories for a future knowledge-base/RAG layer
 ```
+
+## What's implemented vs. planned
+
+| Area | Status |
+|---|---|
+| Flask API + PostgreSQL persistence | Implemented |
+| XGBoost risk model + Isolation Forest anomaly detection, ingested into Postgres | Implemented |
+| Deterministic Safety Engine + emergency triage flow | Implemented |
+| Patient self-entry profile, symptom triage, care history | Implemented |
+| Payer population analytics (members, ED visits, ED spend), risk stratification | Implemented |
+| Google Maps / Places provider discovery | Planned — integration boundary only, no credentials configured |
+| RAG / knowledge-base grounded explanations | Planned — empty scaffolding only |
 
 ## GitHub guidance
 
-It is appropriate to push this milestone before backend database work. It establishes a clean frontend, API contract, and reproducible model-training foundation. The `.gitignore` excludes large local datasets, generated model outputs, environment files, dependency folders, caches, and build outputs.
-
-Do not commit patient-identifiable data, API keys, `.env` files, or production credentials. Before a production deployment, add authenticated API access, a database-backed member service, audit logging, model serving/versioning, and a clinical/safety review.
+Do not commit patient-identifiable data, API keys, `.env` files, or production credentials. Before a production deployment, add authenticated API access, audit logging, model serving/versioning, and a clinical/safety review.

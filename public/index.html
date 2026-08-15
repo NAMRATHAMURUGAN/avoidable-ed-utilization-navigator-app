@@ -31,20 +31,13 @@
       </div>
 
       <div class="topbar-right">
-        <!-- Prototype Demo Role Selector -->
-        <div class="role-selector-wrap" title="Prototype Demo Role Selector (Non-production demo role navigation)">
-          <label for="role-selector" class="sr-only">Switch Experience Role</label>
-          <select id="role-selector" class="role-select-input" aria-label="Switch User Role Experience">
-            <option value="PATIENT" selected>Role: Patient Experience</option>
-            <option value="CARE_MANAGER">Role: Care Manager Workspace</option>
-            <option value="PAYER_ADMIN">Role: Payer Administrator</option>
+        <div class="role-selector-wrap" title="Switch between the Patient and Payer experience">
+          <label for="role-selector" class="sr-only">Switch Experience</label>
+          <select id="role-selector" class="role-select-input" aria-label="Switch User Experience">
+            <option value="PATIENT" selected>Patient / Member Experience</option>
+            <option value="PAYER_ADMIN">Payer Experience</option>
           </select>
         </div>
-
-        <button id="chat-toggle" class="button ghost flex-center">
-          <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span>Care Copilot</span>
-        </button>
       </div>
     </header>
 
@@ -68,11 +61,18 @@
 
         <!-- VIEW 1: PATIENT MY HEALTH & TRIAGE -->
         <section id="triage-view" class="view active">
-          <div class="page-header">
+          <div class="page-header hero-header">
             <div>
-              <p id="triage-eyebrow" class="eyebrow">Direct Symptom Screening</p>
-              <h1 id="triage-title">How can we help you today?</h1>
-              <p id="triage-subtitle" class="subtitle">Tell us what you're experiencing and we'll help you understand the safest next step.</p>
+              <p id="triage-eyebrow" class="eyebrow">Personalized Care Navigation</p>
+              <h1 id="triage-title">Find the safest next step for your care</h1>
+              <p id="triage-subtitle" class="subtitle">Answer a few quick questions about how you're feeling. Our safety-first assessment guides you to the right level of care in minutes.</p>
+              <div class="hero-cta-row">
+                <a href="#chief-complaint" id="start-assessment-cta" class="button primary large">
+                  <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  <span>Start Symptom Assessment</span>
+                </a>
+                <button type="button" class="button ghost large" data-route="patient-profile">My Health Profile</button>
+              </div>
             </div>
           </div>
 
@@ -85,8 +85,8 @@
               </div>
 
               <form id="triage-form" class="triage-form-content">
-                <!-- Member Selector (Shown ONLY for Care Managers & Payers) -->
-                <div class="form-group role-sensitive care-manager-only payer-only">
+                <!-- Member Selector (Shown ONLY for the Payer experience) -->
+                <div class="form-group role-sensitive payer-only">
                   <label for="triage-member-select">Select Member / Beneficiary (Optional)</label>
                   <select id="triage-member-select" class="input-control">
                     <option value="">Anonymous Patient Session (Unlinked)</option>
@@ -242,42 +242,20 @@
         <section id="providers-view" class="view">
           <div class="page-header">
             <div>
-              <p id="providers-eyebrow" class="eyebrow">Local Directory</p>
-              <h1 id="providers-title">Find Care Options</h1>
-              <p id="providers-subtitle" class="subtitle">Filter available care settings by type and distance from your location.</p>
-            </div>
-            <div class="demo-banner-chip">
-              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-              <span>Demo / Compatibility Provider Directory</span>
+              <p class="eyebrow">Care Discovery</p>
+              <h1>Find care near you</h1>
+              <p class="subtitle">Location-based provider discovery will use Google Maps / Places integration.</p>
             </div>
           </div>
 
-          <div class="card filter-card">
-            <div class="filter-row">
-              <div class="filter-group">
-                <label for="provider-type">Care Destination Type</label>
-                <select id="provider-type" class="input-control">
-                  <option value="ALL">All Care Settings</option>
-                  <option value="URGENT_CARE">Urgent Care Center</option>
-                  <option value="TELEHEALTH">24/7 Virtual Telehealth</option>
-                  <option value="PRIMARY_CARE">Primary Care Clinic</option>
-                  <option value="RETAIL_CLINIC">Retail Walk-in Clinic</option>
-                </select>
+          <div class="card integration-pending-card">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               </div>
-              <div class="filter-group">
-                <label for="provider-distance">Maximum Distance</label>
-                <select id="provider-distance" class="input-control">
-                  <option value="">Any Distance</option>
-                  <option value="2">Within 2 Miles</option>
-                  <option value="5">Within 5 Miles</option>
-                  <option value="10">Within 10 Miles</option>
-                </select>
-              </div>
+              <h3>Integration pending configuration</h3>
+              <p>Real-time hospital, urgent care, and clinic search will appear here once Google Maps / Places is connected. No placeholder locations are shown in the meantime.</p>
             </div>
-          </div>
-
-          <div id="provider-grid" class="provider-grid-container">
-            <div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading care options...</p></div>
           </div>
         </section>
 
@@ -291,7 +269,7 @@
             </div>
           </div>
 
-          <div id="history-member-filter" class="card filter-card role-sensitive care-manager-only payer-only">
+          <div id="history-member-filter" class="card filter-card role-sensitive payer-only">
             <div class="filter-row">
               <div class="filter-group flex-grow">
                 <label for="history-patient-select">Select Member or Session ID</label>
@@ -319,7 +297,7 @@
           </div>
         </section>
 
-        <!-- VIEW 5: POPULATION OVERVIEW DASHBOARD (Payer & Care Manager) -->
+        <!-- VIEW 5: POPULATION OVERVIEW DASHBOARD (Payer Experience) -->
         <section id="dashboard-view" class="view">
           <div class="page-header">
             <div>
@@ -331,7 +309,6 @@
 
           <!-- KPI Metric Cards Grid -->
           <div id="stat-grid" class="stat-grid-container">
-            <div class="stat-card skeleton-stat"></div>
             <div class="stat-card skeleton-stat"></div>
             <div class="stat-card skeleton-stat"></div>
             <div class="stat-card skeleton-stat"></div>
@@ -366,7 +343,7 @@
           </div>
         </section>
 
-        <!-- VIEW 6: MEMBER COHORT (Care Manager & Payer Workspace) -->
+        <!-- VIEW 6: MEMBER COHORT (Payer Workspace) -->
         <section id="cohort-view" class="view">
           <div class="page-header">
             <div>
@@ -386,7 +363,7 @@
               </div>
               <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
                 <strong style="color: var(--deep); font-size: 12px;">2. Outreach</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Care Manager Contact</p>
+                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Care Coordination Contact</p>
               </div>
               <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
                 <strong style="color: var(--deep); font-size: 12px;">3. PCP Connect</strong>
@@ -427,49 +404,10 @@
           </div>
         </section>
 
-        <!-- VIEW 7: CARE COORDINATOR PLAN -->
-        <section id="care-plan-view" class="view">
-          <div class="page-header">
-            <div>
-              <p class="eyebrow">Outreach Coordination</p>
-              <h1>Care Navigation Plan Generator</h1>
-              <p class="subtitle">Generate proactive care management intervention plans for high-risk beneficiaries.</p>
-            </div>
-          </div>
-
-          <div class="two-column">
-            <form id="care-plan-form" class="card form-card">
-              <div class="form-group">
-                <label for="care-plan-member">Target Beneficiary *</label>
-                <select id="care-plan-member" class="input-control" required>
-                  <option value="">Select a member...</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="care-plan-notes">Care Manager Clinical Notes (Optional)</label>
-                <textarea id="care-plan-notes" class="input-control" rows="4" placeholder="Enter relevant clinical background, SDOH barriers, or outreach goals..."></textarea>
-              </div>
-              <button type="submit" class="button primary large">
-                <span>Generate Plan</span>
-              </button>
-            </form>
-
-            <div id="care-plan-result" class="card result-panel-card">
-              <div class="empty-state">
-                <div class="empty-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                </div>
-                <h3>No Plan Generated</h3>
-                <p>Select a beneficiary on the left to prepare an outreach care plan.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
       </main>
     </div>
 
-    <!-- MEMBER PROFILE SIDE DRAWER (Wide 540px Drawer for Care Manager & Payer Only) -->
+    <!-- MEMBER PROFILE SIDE DRAWER (Payer Experience Only) -->
     <aside id="member-panel" class="side-panel" aria-hidden="true">
       <div class="panel-header">
         <div>
@@ -485,7 +423,7 @@
       </div>
     </aside>
 
-    <!-- CARE COPILOT CHAT DRAWER -->
+    <!-- CARE COPILOT CHAT DRAWER (currently unreachable in the UI; the backing /api/chat-copilot endpoint is not implemented on Flask yet) -->
     <aside id="chat-panel" class="chat-panel" aria-hidden="true">
       <div class="panel-header">
         <div>

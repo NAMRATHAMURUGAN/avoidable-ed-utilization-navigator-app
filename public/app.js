@@ -1,13 +1,14 @@
 /**
  * Care Navigation Navigator — Frontend Application Logic
- * Role-Based Architecture (Patient, Care Manager, Payer Administrator)
+ * Two-role architecture: Patient / Member, and Payer.
  * Vanilla ES Module SPA driver serving Flask endpoints.
  */
 
 const state = {
-  activeRole: 'PATIENT', // 'PATIENT' | 'CARE_MANAGER' | 'PAYER_ADMIN'
+  activeRole: 'PATIENT', // 'PATIENT' | 'PAYER_ADMIN'
   activeRoute: 'triage',
   patients: [],
+  patientsLoaded: false,
   analytics: null,
   currentEncounter: null,
   currentSessionId: null,
@@ -21,7 +22,6 @@ const state = {
     prefSetting: 'Virtual Telehealth First',
     commPref: 'Email Updates',
   },
-  selectedTimeSlot: 'Today at 2:00 PM',
 };
 
 // Helper Utilities
@@ -80,7 +80,7 @@ function renderSidebarNav(role) {
       </button>
       <button data-route="providers" class="nav-item ${state.activeRoute === 'providers' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
-        <span>Find Care Options</span>
+        <span>Find Care Near You</span>
       </button>
       <button data-route="history" class="nav-item ${state.activeRoute === 'history' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -89,30 +89,6 @@ function renderSidebarNav(role) {
       <button data-route="patient-profile" class="nav-item ${state.activeRoute === 'patient-profile' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>My Health Profile</span>
-      </button>
-    `;
-  } else if (role === 'CARE_MANAGER') {
-    if (sectionTitle) sectionTitle.textContent = 'Care Management';
-    container.innerHTML = `
-      <button data-route="dashboard" class="nav-item ${state.activeRoute === 'dashboard' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-        <span>Prioritization Queue</span>
-      </button>
-      <button data-route="cohort" class="nav-item ${state.activeRoute === 'cohort' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span>Member Cohort</span>
-      </button>
-      <button data-route="history" class="nav-item ${state.activeRoute === 'history' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span>Member Audit History</span>
-      </button>
-      <button data-route="care-plan" class="nav-item ${state.activeRoute === 'care-plan' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        <span>Care Plan Coordinator</span>
-      </button>
-      <button data-route="providers" class="nav-item ${state.activeRoute === 'providers' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
-        <span>Care Settings Directory</span>
       </button>
     `;
   } else if (role === 'PAYER_ADMIN') {
@@ -124,15 +100,11 @@ function renderSidebarNav(role) {
       </button>
       <button data-route="cohort" class="nav-item ${state.activeRoute === 'cohort' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span>ED Utilization & Risk</span>
+        <span>Member Population & Risk</span>
       </button>
       <button data-route="history" class="nav-item ${state.activeRoute === 'history' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <span>Population Audit Trail</span>
-      </button>
-      <button data-route="providers" class="nav-item ${state.activeRoute === 'providers' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
-        <span>Network Destinations</span>
       </button>
     `;
   }
@@ -140,9 +112,9 @@ function renderSidebarNav(role) {
 
 /**
  * ROLE SWITCHER STATE MANAGER
- * Prototype Demo Role Selector (Non-production demo role navigation)
+ * Switches between the Patient / Member experience and the Payer experience.
  */
-function setRole(role) {
+async function setRole(role) {
   state.activeRole = role;
 
   const selector = $('#role-selector');
@@ -153,51 +125,38 @@ function setRole(role) {
   if (role === 'PATIENT') {
     if (workspaceTitle) workspaceTitle.textContent = 'Patient Portal';
 
-    // Page titles
-    if ($('#triage-eyebrow')) $('#triage-eyebrow').textContent = 'Direct Symptom Screening';
-    if ($('#triage-title')) $('#triage-title').textContent = 'How can we help you today?';
-    if ($('#triage-subtitle')) $('#triage-subtitle').textContent = "Tell us what you're experiencing and we'll help you understand the safest next step.";
     if ($('#history-title')) $('#history-title').textContent = 'My Care History';
     if ($('#history-subtitle')) $('#history-subtitle').textContent = 'Review your symptom assessments and recorded care navigation choices.';
-    if ($('#providers-title')) $('#providers-title').textContent = 'Find Care Options';
 
-    // Hide internal Payer / Care Manager role sensitive sections
-    $$('.care-manager-only, .payer-only').forEach(el => el.classList.add('role-hidden'));
-  } else if (role === 'CARE_MANAGER') {
-    if (workspaceTitle) workspaceTitle.textContent = 'Care Management Workspace';
-
-    // Page titles
-    if ($('#triage-eyebrow')) $('#triage-eyebrow').textContent = 'Clinical Decision Support';
-    if ($('#triage-title')) $('#triage-title').textContent = 'Clinical Symptom Triage';
-    if ($('#triage-subtitle')) $('#triage-subtitle').textContent = 'Assess member symptoms against authoritative safety rules and ML risk stratification.';
-    if ($('#history-title')) $('#history-title').textContent = 'Member Interaction Audit History';
-    if ($('#history-subtitle')) $('#history-subtitle').textContent = 'Review persistent member triage encounters and recorded navigation choices.';
-    if ($('#providers-title')) $('#providers-title').textContent = 'Care Settings Directory';
-
-    // Show Care Manager sections
-    $$('.care-manager-only').forEach(el => el.classList.remove('role-hidden'));
+    // Hide Payer-only sections; the patient experience never surfaces population data
     $$('.payer-only').forEach(el => el.classList.add('role-hidden'));
   } else if (role === 'PAYER_ADMIN') {
-    if (workspaceTitle) workspaceTitle.textContent = 'Payer Administrator';
+    if (workspaceTitle) workspaceTitle.textContent = 'Payer Analytics Workspace';
 
-    // Page titles
-    if ($('#triage-eyebrow')) $('#triage-eyebrow').textContent = 'Population Health Triage';
-    if ($('#triage-title')) $('#triage-title').textContent = 'Population Symptom Screening';
-    if ($('#triage-subtitle')) $('#triage-subtitle').textContent = 'Screening portal for population care management and risk stratification.';
     if ($('#history-title')) $('#history-title').textContent = 'Population Audit Trail';
     if ($('#history-subtitle')) $('#history-subtitle').textContent = 'Database audit trail of care navigation decisions across members.';
 
-    // Show Payer sections
-    $$('.care-manager-only, .payer-only').forEach(el => el.classList.remove('role-hidden'));
+    $$('.payer-only').forEach(el => el.classList.remove('role-hidden'));
+
+    // Population data is only fetched once the Payer experience is actually opened
+    if (!state.patientsLoaded) {
+      try {
+        state.patients = (await request('/api/patients')) || [];
+        state.patientsLoaded = true;
+        populateMemberSelectors();
+      } catch (error) {
+        console.error('Failed to load population data:', error);
+      }
+    }
   }
 
   // Render Sidebar for Active Role
   renderSidebarNav(role);
 
-  // Set default view if switching to a route disallowed for current role
-  if (role === 'PATIENT' && ['dashboard', 'cohort', 'care-plan'].includes(state.activeRoute)) {
+  // Keep each role on routes that exist in its own navigation
+  if (role === 'PATIENT' && ['dashboard', 'cohort'].includes(state.activeRoute)) {
     route('triage');
-  } else if (role !== 'PATIENT' && state.activeRoute === 'patient-profile') {
+  } else if (role === 'PAYER_ADMIN' && ['patient-profile', 'triage', 'providers'].includes(state.activeRoute)) {
     route('dashboard');
   } else {
     route(state.activeRoute);
@@ -229,7 +188,6 @@ function route(name) {
   // View-specific trigger hooks
   if (name === 'dashboard') renderDashboard();
   if (name === 'cohort') renderCohort();
-  if (name === 'providers') loadProviders();
   if (name === 'history') {
     if (state.activeRole === 'PATIENT') {
       loadPatientCareHistory();
@@ -267,11 +225,6 @@ function populateMemberSelectors() {
     triageSelect.innerHTML = `<option value="">Anonymous Patient Session (Unlinked)</option>` + optionsHtml;
   }
 
-  const carePlanSelect = $('#care-plan-member');
-  if (carePlanSelect) {
-    carePlanSelect.innerHTML = `<option value="">Select a member...</option>` + optionsHtml;
-  }
-
   const historySelect = $('#history-patient-select');
   if (historySelect) {
     historySelect.innerHTML = `<option value="">Select a member...</option>` + optionsHtml;
@@ -305,7 +258,7 @@ async function submitTriage(event) {
       associatedSymptoms: [],
     };
 
-    // If Care Manager / Payer selected a member ID, link it
+    // If the Payer experience selected a member ID, link it
     if (patientId && state.activeRole !== 'PATIENT') {
       payload.patientId = patientId;
     }
@@ -367,45 +320,16 @@ function renderEmergencyResult(data, container) {
 }
 
 /**
- * Non-Emergency Care Recommendation UI Render (With Simulated Telehealth Demo Workflow)
+ * Non-Emergency Care Recommendation UI Render
  */
 function renderNonEmergencyResult(data, container) {
-  // Show patient context only if Care Manager or Payer role
+  // Show patient context only in the Payer experience
   const patientContextHtml = (data.patientContext && state.activeRole !== 'PATIENT')
     ? `<div class="patient-context-chip">
         <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Beneficiary: ${escapeHtml(data.patientContext.beneficiaryId)} &bull; ${riskBadge(data.patientContext.riskLevel)}</span>
        </div>`
     : '';
-
-  const isTelehealth = data.recommendedAcuity === 'TELEHEALTH';
-
-  const suitableProvidersHtml = (data.suitableProviders || []).slice(0, 3).map((p, idx) => `
-    <div class="provider-option-item ${idx === 0 ? 'recommended-option' : ''}">
-      <div class="provider-option-info">
-        <h4>${idx === 0 ? '<span class="acuity-badge telehealth" style="padding:2px 8px; font-size:10px; margin-right:6px;">RECOMMENDED</span> ' : ''}${escapeHtml(p.name)}</h4>
-        <p>${escapeHtml(p.operatingHours)} &bull; ~${p.currentWaitTimeMins} min wait &bull; ${formatMoney(p.copayAmount)} copay</p>
-      </div>
-      <button class="button secondary btn-select-provider" data-provider-id="${p.id}" data-acuity="${data.recommendedAcuity}">
-        ${isTelehealth ? 'Select Option' : 'Select Provider'}
-      </button>
-    </div>
-  `).join('');
-
-  const simulatedTelehealthBookingHtml = isTelehealth ? `
-    <div class="telehealth-demo-card">
-      <h4>Simulated Demo Telehealth Appointment Booking</h4>
-      <p><em>Demo appointment — No real appointment or clinical visit will be scheduled.</em></p>
-      <div class="slot-buttons-grid">
-        <button class="time-slot-btn ${state.selectedTimeSlot === 'Today at 2:00 PM' ? 'selected' : ''}" data-slot="Today at 2:00 PM">Today at 2:00 PM</button>
-        <button class="time-slot-btn ${state.selectedTimeSlot === 'Today at 4:30 PM' ? 'selected' : ''}" data-slot="Today at 4:30 PM">Today at 4:30 PM</button>
-        <button class="time-slot-btn ${state.selectedTimeSlot === 'Tomorrow at 10:00 AM' ? 'selected' : ''}" data-slot="Tomorrow at 10:00 AM">Tomorrow at 10:00 AM</button>
-      </div>
-      <button id="btn-confirm-telehealth-demo" class="button primary full-width">
-        Confirm Demo Appointment (${escapeHtml(state.selectedTimeSlot)})
-      </button>
-    </div>
-  ` : '';
 
   container.innerHTML = `
     <div class="recommendation-card">
@@ -419,6 +343,11 @@ function renderNonEmergencyResult(data, container) {
 
       ${patientContextHtml}
 
+      <div class="safety-check-row">
+        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span>Safety screening complete — no emergency warning signs detected.</span>
+      </div>
+
       <div class="rationale-box">
         <strong>Clinical & Navigation Rationale:</strong><br />
         ${escapeHtml(data.clinicalRationale)}
@@ -428,86 +357,13 @@ function renderNonEmergencyResult(data, container) {
         ${escapeHtml(data.safetyDisclaimer)}
       </div>
 
-      <div>
-        <h3 class="eyebrow">Recommended Care Options</h3>
-        <div class="rec-providers-list">
-          ${suitableProvidersHtml || '<p class="muted">No specific local options listed; proceed to nearest primary care clinic.</p>'}
-        </div>
+      <div class="next-step-card">
+        <h3 class="eyebrow">Next Step</h3>
+        <p>Based on this assessment, <strong>${escapeHtml(data.recommendedSettingName)}</strong> is the appropriate care setting. Use Find Care Near You to locate options once location-based discovery is available, or contact your primary care provider directly.</p>
+        <button class="button secondary" data-route="providers">Find Care Near You</button>
       </div>
-
-      ${simulatedTelehealthBookingHtml}
     </div>
   `;
-
-  // Bind provider selection buttons
-  $$('.btn-select-provider', container).forEach(btn => {
-    btn.addEventListener('click', () => {
-      recordNavigationAction(btn.dataset.providerId, btn.dataset.acuity, 'PROVIDER_SELECTED');
-    });
-  });
-
-  // Bind time slot selection buttons
-  $$('.time-slot-btn', container).forEach(btn => {
-    btn.addEventListener('click', () => {
-      $$('.time-slot-btn', container).forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      state.selectedTimeSlot = btn.dataset.slot;
-      const confirmBtn = $('#btn-confirm-telehealth-demo');
-      if (confirmBtn) confirmBtn.textContent = `Confirm Demo Appointment (${state.selectedTimeSlot})`;
-    });
-  });
-
-  // Bind telehealth confirm demo button
-  $('#btn-confirm-telehealth-demo', container)?.addEventListener('click', () => {
-    const provId = (data.suitableProviders && data.suitableProviders[0]) ? data.suitableProviders[0].id : 'prov-telehealth-01';
-    recordNavigationAction(provId, 'TELEHEALTH', 'APPOINTMENT_BOOKED', {
-      appointmentTime: state.selectedTimeSlot,
-      isSimulatedDemo: true,
-      providerName: (data.suitableProviders && data.suitableProviders[0]) ? data.suitableProviders[0].name : '24/7 Virtual Telehealth Network',
-    });
-  });
-}
-
-/**
- * Record Navigation Action API call (POST /api/navigation/action)
- */
-async function recordNavigationAction(providerId, acuity, actionType = 'PROVIDER_SELECTED', extraDetails = {}) {
-  if (!state.currentEncounter) return;
-
-  try {
-    const payload = {
-      encounterId: state.currentEncounter.encounterId,
-      sessionId: state.currentSessionId,
-      actionType,
-      selectedProviderId: providerId,
-      selectedAcuity: acuity,
-      actionDetails: {
-        selectedAt: new Date().toISOString(),
-        roleMode: state.activeRole,
-        ...extraDetails,
-      },
-    };
-    if (state.currentEncounter.patientContext && state.activeRole !== 'PATIENT') {
-      payload.patientId = state.currentEncounter.patientContext.patientId;
-    }
-
-    const res = await request('/api/navigation/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const msg = actionType === 'APPOINTMENT_BOOKED'
-      ? `Simulated Telehealth Appointment Recorded! Action ID: ${res.actionId}. Slot: ${state.selectedTimeSlot}.`
-      : `Selection Recorded! Action ID: ${res.actionId}. Your choice has been persisted.`;
-
-    alert(msg);
-
-    // Switch to history view
-    route('history');
-  } catch (err) {
-    alert(`Failed to record action: ${err.message}`);
-  }
 }
 
 /**
@@ -603,7 +459,7 @@ async function loadPatientCareHistory() {
 }
 
 /**
- * VIEW 3: PATIENT HISTORY TIMELINE (For Care Manager & Payer Roles)
+ * VIEW 3: PATIENT HISTORY TIMELINE (For the Payer Role)
  */
 async function loadPatientHistory(patientId) {
   const container = $('#history-timeline-container');
@@ -689,61 +545,6 @@ async function loadPatientHistory(patientId) {
 }
 
 /**
- * VIEW 4: CARE OPTIONS PROVIDER DIRECTORY
- */
-async function loadProviders() {
-  const grid = $('#provider-grid');
-  grid.innerHTML = '<div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading care options...</p></div>';
-
-  try {
-    const type = $('#provider-type').value;
-    const maxDist = $('#provider-distance').value;
-
-    const params = new URLSearchParams();
-    if (type !== 'ALL') params.set('type', type);
-    if (maxDist) params.set('maxDistance', maxDist);
-
-    const providers = await request(`/api/providers?${params}`);
-
-    if (!providers || providers.length === 0) {
-      grid.innerHTML = `
-        <div class="empty-state">
-          <h3>No Care Options Found</h3>
-          <p>Try adjusting your search filters or distance radius.</p>
-        </div>
-      `;
-      return;
-    }
-
-    grid.innerHTML = providers.map(p => `
-      <article class="card provider-card">
-        <div class="provider-header">
-          <div>
-            <p class="eyebrow">${escapeHtml((p.type || '').replace('_', ' '))}</p>
-            <h3>${escapeHtml(p.name)}</h3>
-          </div>
-          <span class="distance-badge">${p.distanceMiles} mi</span>
-        </div>
-        <p class="provider-address">${escapeHtml(p.address)}<br />${escapeHtml(p.cityStateZip)}</p>
-        <div class="provider-meta-row">
-          <span>${p.isOpen247 ? 'Open 24/7' : escapeHtml(p.operatingHours)}</span>
-          <span>~${p.currentWaitTimeMins} min wait</span>
-        </div>
-        <div class="provider-footer-row">
-          <div>
-            <strong>${formatMoney(p.copayAmount)} copay</strong>
-            ${p.isDemo ? '<span class="demo-tag"> &bull; Demo Record</span>' : ''}
-          </div>
-          ${p.phone ? `<a class="provider-phone" href="tel:${escapeHtml(p.phone)}">${escapeHtml(p.phone)}</a>` : ''}
-        </div>
-      </article>
-    `).join('');
-  } catch (error) {
-    grid.innerHTML = `<div class="notice emergency">Failed to load care options: ${escapeHtml(error.message)}</div>`;
-  }
-}
-
-/**
  * VIEW 5: POPULATION OVERVIEW DASHBOARD
  */
 function renderDashboard() {
@@ -754,7 +555,6 @@ function renderDashboard() {
     ['Total Members', formatNumber(a.totalPatients), 'PostgreSQL Member Population'],
     ['Total ED Visits', formatNumber(a.totalEdVisits), '12-Month Claims Ingestion'],
     ['Total ED Spend', formatMoney(a.totalEdSpend), '12-Month Emergency Department Spend'],
-    ['Intervention Priority', `${a.avoidableEdPercentage || 0}%`, 'Population Prioritization Signal'],
   ].map(([label, val, detail]) => `
     <div class="stat-card">
       <div class="stat-label">${label}</div>
@@ -797,7 +597,15 @@ function renderDashboard() {
       </div>
     `).join('');
   } else {
-    $('#time-pattern').innerHTML = '<p class="muted">Time pattern data is not available yet.</p>';
+    $('#time-pattern').innerHTML = `
+      <div class="empty-state" style="padding: 24px 12px;">
+        <div class="empty-icon" style="width: 48px; height: 48px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3 style="font-size: 15px;">Time-of-day signal pending</h3>
+        <p>This view requires claims-level visit timestamps not yet available in the ingested dataset.</p>
+      </div>
+    `;
   }
 }
 
@@ -824,7 +632,6 @@ function renderCohort(patients = state.patients) {
           <th>Priority Level</th>
           <th>12m ED Visits</th>
           <th>12m ED Spend</th>
-          <th>Care Manager</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -838,7 +645,6 @@ function renderCohort(patients = state.patients) {
             <td>${riskBadge(p.riskLevel)}</td>
             <td><strong>${p.edVisitCount12m}</strong></td>
             <td>${formatMoney(p.totalEdSpend12m)}</td>
-            <td>${escapeHtml(p.assignedCareManager || 'Unassigned')}</td>
             <td>
               <button class="button secondary btn-table-profile" data-member-id="${p.id}">
                 Profile
@@ -872,7 +678,7 @@ function filterCohort() {
 }
 
 /**
- * MEMBER PROFILE DRAWER (Care Manager & Payer Only)
+ * MEMBER PROFILE DRAWER (Payer Only)
  */
 async function openMember(id) {
   if (state.activeRole === 'PATIENT') return; // Enforce privacy boundary
@@ -918,11 +724,8 @@ async function openMember(id) {
       </div>
 
       <div style="border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px;">
-        <button id="btn-drawer-history" class="button secondary full-width" style="margin-bottom: 10px;">
+        <button id="btn-drawer-history" class="button primary full-width">
           View Member Audit Log
-        </button>
-        <button id="btn-drawer-plan" class="button primary full-width">
-          Create Care Plan
         </button>
       </div>
     `;
@@ -933,12 +736,6 @@ async function openMember(id) {
       $('#history-patient-select').value = patient.id;
       route('history');
     });
-
-    $('#btn-drawer-plan')?.addEventListener('click', () => {
-      closeMember();
-      $('#care-plan-member').value = patient.id;
-      route('care-plan');
-    });
   } catch (error) {
     detail.innerHTML = `<div class="notice emergency">Failed to load member profile: ${escapeHtml(error.message)}</div>`;
   }
@@ -947,51 +744,6 @@ async function openMember(id) {
 function closeMember() {
   $('#member-panel').classList.remove('open');
   $('#panel-backdrop').classList.remove('open');
-}
-
-/**
- * VIEW 7: CARE COORDINATOR PLAN GENERATOR
- */
-async function generateCarePlan(event) {
-  event.preventDefault();
-  const resultPanel = $('#care-plan-result');
-  resultPanel.innerHTML = '<div class="loading-spinner-wrap"><div class="spinner"></div><p>Generating care navigation plan...</p></div>';
-
-  try {
-    const patientId = $('#care-plan-member').value;
-    const customNotes = $('#care-plan-notes').value;
-
-    const plan = await request('/api/generate-care-plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patientId, customNotes }),
-    });
-
-    resultPanel.innerHTML = `
-      <div class="recommendation-card">
-        <p class="eyebrow">Outreach Plan</p>
-        <h2>${escapeHtml(plan.patientName || 'Beneficiary Plan')}</h2>
-        <p>${escapeHtml(plan.riskSummary || '')}</p>
-
-        <h4 class="eyebrow">Priority Interventions</h4>
-        <ol style="padding-left: 20px; margin: 8px 0 16px 0;">
-          ${(plan.recommendedInterventions || []).map(item => `
-            <li style="margin-bottom: 8px;">
-              <strong>${escapeHtml(item.category)}:</strong> ${escapeHtml(item.action)}
-              <span class="muted">(${escapeHtml(item.timeline)})</span>
-            </li>
-          `).join('')}
-        </ol>
-
-        <div class="notice">
-          <strong>Member Outreach Script:</strong><br />
-          ${escapeHtml(plan.memberOutreachScript || '')}
-        </div>
-      </div>
-    `;
-  } catch (error) {
-    resultPanel.innerHTML = `<div class="notice emergency">Failed to generate care plan: ${escapeHtml(error.message)}</div>`;
-  }
 }
 
 /**
@@ -1089,20 +841,14 @@ function bindEvents() {
   // Filters & Form listeners
   $('#member-search')?.addEventListener('input', filterCohort);
   $('#risk-filter')?.addEventListener('change', filterCohort);
-  $('#provider-type')?.addEventListener('change', loadProviders);
-  $('#provider-distance')?.addEventListener('change', loadProviders);
 
   $('#triage-form')?.addEventListener('submit', submitTriage);
   $('#patient-self-profile-form')?.addEventListener('submit', saveSelfProfile);
-  $('#care-plan-form')?.addEventListener('submit', generateCarePlan);
 
   $('#load-history-btn')?.addEventListener('click', () => {
     const pId = $('#history-patient-select').value;
     loadPatientHistory(pId);
   });
-
-  $('#chat-toggle')?.addEventListener('click', () => $('#chat-panel')?.classList.add('open'));
-  $('#chat-form')?.addEventListener('submit', submitChat);
 }
 
 /**
@@ -1119,21 +865,16 @@ async function init() {
     if ($('#self-patient-pref-setting')) $('#self-patient-pref-setting').value = state.patientProfile.prefSetting;
     if ($('#self-patient-comm')) $('#self-patient-comm').value = state.patientProfile.commPref;
 
-    // Load Core Datasets
-    const [patientsData, analyticsData] = await Promise.all([
-      request('/api/patients'),
-      request('/api/analytics'),
-    ]);
+    // Load aggregate analytics only. The member-level population dataset is
+    // fetched lazily, only when the Payer experience is opened (see setRole),
+    // so it is never pulled into memory during a Patient session.
+    state.analytics = (await request('/api/analytics')) || null;
 
-    state.patients = patientsData || [];
-    state.analytics = analyticsData || null;
-
-    // Populate Dynamic UI Elements
     populateMemberSelectors();
     bindEvents();
 
     // Default Role & View Initialization
-    setRole('PATIENT');
+    await setRole('PATIENT');
   } catch (error) {
     console.error('Initialization error:', error);
     document.querySelector('.main-content').innerHTML = `
