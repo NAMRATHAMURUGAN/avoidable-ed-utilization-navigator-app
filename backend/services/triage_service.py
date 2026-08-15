@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -21,6 +22,74 @@ from backend.safety.engine import evaluate_safety
 from backend.services import provider_service
 from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
+
+
+MAX_CHIEF_COMPLAINT_LENGTH = 1_000
+MAX_SYMPTOM_DURATION_LENGTH = 128
+MAX_LIST_ITEM_LENGTH = 256
+MAX_LIST_ITEMS = 50
+MAX_IDENTIFIER_LENGTH = 64
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
+
+
+class TriageValidationError(ValueError):
+    """Raised when a triage API payload is structurally invalid."""
+
+
+class TriageMemberNotFoundError(LookupError):
+    """Raised when a supplied member identifier cannot be resolved."""
+
+
+class TriagePersistenceError(RuntimeError):
+    """Raised when a triage encounter cannot be durably persisted."""
+
+
+def _validate_identifier(value: Any, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise TriageValidationError(f"{field} must be a string or integer identifier")
+    normalized = str(value).strip()
+    if not normalized or len(normalized) > MAX_IDENTIFIER_LENGTH:
+        raise TriageValidationError(f"{field} must be between 1 and {MAX_IDENTIFIER_LENGTH} characters")
+    if not _IDENTIFIER_PATTERN.fullmatch(normalized):
+        raise TriageValidationError(f"{field} contains invalid characters")
+
+
+def validate_triage_request(data: Any) -> dict[str, Any]:
+    """Validate the public triage request before safety evaluation or persistence."""
+    if not isinstance(data, dict):
+        raise TriageValidationError("JSON request payload must be an object")
+
+    chief_complaint = data.get("chiefComplaint")
+    if not isinstance(chief_complaint, str) or not chief_complaint.strip():
+        raise TriageValidationError("chiefComplaint is required and must be a nonblank string")
+    if len(chief_complaint.strip()) > MAX_CHIEF_COMPLAINT_LENGTH:
+        raise TriageValidationError(
+            f"chiefComplaint must not exceed {MAX_CHIEF_COMPLAINT_LENGTH} characters"
+        )
+
+    symptoms_duration = data.get("symptomsDuration")
+    if symptoms_duration is not None:
+        if not isinstance(symptoms_duration, str):
+            raise TriageValidationError("symptomsDuration must be a string")
+        if len(symptoms_duration.strip()) > MAX_SYMPTOM_DURATION_LENGTH:
+            raise TriageValidationError(
+                f"symptomsDuration must not exceed {MAX_SYMPTOM_DURATION_LENGTH} characters"
+            )
+
+    for field in ("associatedSymptoms", "selectedRedFlags"):
+        value = data.get(field, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise TriageValidationError(f"{field} must be a list of strings")
+        if len(value) > MAX_LIST_ITEMS or any(len(item) > MAX_LIST_ITEM_LENGTH for item in value):
+            raise TriageValidationError(f"{field} contains too many or overly long values")
+
+    if "hasRedFlags" in data and not isinstance(data["hasRedFlags"], bool):
+        raise TriageValidationError("hasRedFlags must be a boolean")
+
+    for field in ("patientId", "member_id", "patient_id", "sessionId", "session_id"):
+        if field in data and data[field] is not None:
+            _validate_identifier(data[field], field)
+    return data
 
 
 def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str, Any]:
@@ -52,34 +121,35 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
     if patient_id_raw is not None:
         m_repo = MemberRepository(session)
         member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
-        if member_res is not None:
-            member_id = member_res.member.id
-            anal_dict = member_analytical_result_to_dict(member_res)
-            xgb_prob = (
-                member_res.xgboost_prediction.high_utilization_probability
-                if member_res.xgboost_prediction
-                else None
-            )
-            anomaly_flag = (
-                bool(member_res.anomaly_result.anomaly_flag)
-                if member_res.anomaly_result
-                else False
-            )
-            patient_context = {
-                "patientId": str(member_res.member.id),
-                "beneficiaryId": member_res.member.bene_id,
-                "riskLevel": anal_dict["riskLevel"],
-                "highUtilizationProbability": xgb_prob,
-                "anomalyFlag": anomaly_flag,
-                "edVisitCount12m": anal_dict["edVisitCount12m"],
-            }
-            nav_service = CareNavigationService()
-            proactive_rec = nav_service.generate_recommendation(
-                member_data={"bene_id": member_res.member.bene_id},
-                utilization_data={"ed_visit_count": anal_dict["edVisitCount12m"]},
-                ml_data={"predicted_probability": xgb_prob},
-                anomaly_data={"anomaly_flag": anomaly_flag},
-            )
+        if member_res is None:
+            raise TriageMemberNotFoundError("Patient not found")
+        member_id = member_res.member.id
+        anal_dict = member_analytical_result_to_dict(member_res)
+        xgb_prob = (
+            member_res.xgboost_prediction.high_utilization_probability
+            if member_res.xgboost_prediction
+            else None
+        )
+        anomaly_flag = (
+            bool(member_res.anomaly_result.anomaly_flag)
+            if member_res.anomaly_result
+            else False
+        )
+        patient_context = {
+            "patientId": str(member_res.member.id),
+            "beneficiaryId": member_res.member.bene_id,
+            "riskLevel": anal_dict["riskLevel"],
+            "highUtilizationProbability": xgb_prob,
+            "anomalyFlag": anomaly_flag,
+            "edVisitCount12m": anal_dict["edVisitCount12m"],
+        }
+        nav_service = CareNavigationService()
+        proactive_rec = nav_service.generate_recommendation(
+            member_data={"bene_id": member_res.member.bene_id},
+            utilization_data={"ed_visit_count": anal_dict["edVisitCount12m"]},
+            ml_data={"predicted_probability": xgb_prob},
+            anomaly_data={"anomaly_flag": anomaly_flag},
+        )
 
     triage_input = {
         "chiefComplaint": chief_complaint,
@@ -195,6 +265,8 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
         created_at=now,
     )
     saved = repo.create_encounter(enc)
+    if saved.id is None:
+        raise TriagePersistenceError("Unable to record triage encounter")
 
     response_payload: dict[str, Any] = {
         "encounterId": saved.id,
@@ -230,6 +302,7 @@ def process_triage_request(
     data: dict[str, Any], session: Session | None = None
 ) -> dict[str, Any]:
     """Process a symptom triage request via the deterministic safety engine and persist encounter."""
+    validate_triage_request(data)
     if session is not None:
         return _execute_triage_request(session, data)
 

@@ -17,7 +17,12 @@ def triage():
 
     data = request.get_json(silent=True)
     if data is None:
-        data = {}
+        return jsonify({"error": "Malformed JSON request payload"}), 400
 
-    response = triage_service.process_triage_request(data)
+    try:
+        response = triage_service.process_triage_request(data)
+    except triage_service.TriageValidationError as error:
+        return jsonify({"error": str(error)}), 400
+    except triage_service.TriageMemberNotFoundError as error:
+        return jsonify({"error": str(error)}), 404
     return jsonify(response)

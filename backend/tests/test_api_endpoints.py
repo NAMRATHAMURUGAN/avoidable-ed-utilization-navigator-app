@@ -43,8 +43,18 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.db_session: Session = self.SessionLocal()
 
         self._seed_database()
+        self.triage_scope_patcher = patch(
+            "backend.services.triage_service.session_scope", self._mock_session_scope
+        )
+        self.provider_scope_patcher = patch(
+            "backend.services.provider_service.session_scope", self._mock_session_scope
+        )
+        self.triage_scope_patcher.start()
+        self.provider_scope_patcher.start()
 
     def tearDown(self) -> None:
+        self.triage_scope_patcher.stop()
+        self.provider_scope_patcher.stop()
         self.db_session.close()
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
@@ -305,11 +315,48 @@ class ApiEndpointsTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data, {"error": "Content-Type must be application/json"})
 
-        # Empty JSON object should process safely without crashing
+        # Empty JSON object is invalid; a clinical recommendation cannot be inferred.
         empty_res = self.client.post("/api/triage", json={})
-        self.assertEqual(empty_res.status_code, 200)
-        empty_data = empty_res.get_json()
-        self.assertFalse(empty_data["isEmergencyRedFlag"])
+        self.assertEqual(empty_res.status_code, 400)
+        self.assertIn("chiefComplaint", empty_res.get_json()["error"])
+
+        array_res = self.client.post("/api/triage", json=[])
+        self.assertEqual(array_res.status_code, 400)
+        self.assertEqual(array_res.content_type, "application/json")
+
+    def test_post_triage_valid_member_and_unknown_member_validation(self) -> None:
+        valid = self.client.post("/api/triage", json={
+            "patientId": "CMS-A894-201",
+            "chiefComplaint": "Medication review follow-up",
+            "associatedSymptoms": [],
+            "selectedRedFlags": [],
+            "hasRedFlags": False,
+        })
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.get_json()["patientContext"]["beneficiaryId"], "CMS-A894-201")
+
+        unknown = self.client.post("/api/triage", json={
+            "patientId": "CMS-UNKNOWN-1",
+            "chiefComplaint": "Medication review",
+        })
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(unknown.get_json(), {"error": "Patient not found"})
+
+    def test_post_triage_rejects_invalid_field_types_and_lengths(self) -> None:
+        invalid_payloads = [
+            {"chiefComplaint": 4},
+            {"chiefComplaint": "Rash", "symptomsDuration": 1},
+            {"chiefComplaint": "Rash", "associatedSymptoms": "fever"},
+            {"chiefComplaint": "Rash", "selectedRedFlags": ["Chest pain", 1]},
+            {"chiefComplaint": "Rash", "hasRedFlags": "false"},
+            {"chiefComplaint": "x" * 1001},
+            {"chiefComplaint": "Rash", "sessionId": "bad session"},
+        ]
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/triage", json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertIsInstance(response.get_json(), dict)
 
     def test_get_providers_returns_compatibility_providers(self) -> None:
         response = self.client.get("/api/providers")
@@ -317,6 +364,24 @@ class ApiEndpointsTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertIsInstance(data, list)
         self.assertEqual(len(data), 5)
+
+    def test_provider_query_validation(self) -> None:
+        for query in ("?maxDistance=bad", "?maxDistance=-1", "?maxDistance=nan", "?maxDistance=501", "?type=HOSPITAL"):
+            with self.subTest(query=query):
+                response = self.client.get("/api/providers" + query)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.content_type, "application/json")
+
+    def test_patient_query_and_identifier_validation(self) -> None:
+        self.assertEqual(self.client.get("/api/patients?risk=unknown").status_code, 400)
+        self.assertEqual(self.client.get("/api/patients?search=" + ("x" * 101)).status_code, 400)
+        self.assertEqual(self.client.get("/api/patients/" + ("x" * 65)).status_code, 400)
+
+    def test_flask_errors_are_json(self) -> None:
+        response = self.client.get("/api/not-a-route")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertIn("error", response.get_json())
 
     def test_existing_ml_results_health(self) -> None:
         response = self.client.get("/api/ml/health")
