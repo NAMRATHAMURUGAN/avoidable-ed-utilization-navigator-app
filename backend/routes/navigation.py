@@ -11,8 +11,52 @@ from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+from backend.repositories.model_run_repository import ModelRunRepository
+from backend.services.navigation_service import CareNavigationService
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
+
+
+@navigation_blueprint.get("/navigation/members/<member_id>/recommendations", strict_slashes=False)
+def get_member_navigation_recommendations(member_id: str):
+    """GET care-navigation suggestions based on available historical member data."""
+    with session_scope() as session:
+        member_repo = MemberRepository(session)
+        run_repo = ModelRunRepository(session)
+        xgb_run = run_repo.get_latest("xgboost")
+        anomaly_run = run_repo.get_latest("isolation_forest")
+        result = member_repo.get_combined_result_by_id_or_bene(
+            member_id,
+            xgb_model_run_id=xgb_run.model_run_id if xgb_run else None,
+            anomaly_model_run_id=anomaly_run.model_run_id if anomaly_run else None,
+        )
+        if result is None:
+            return jsonify({"error": "Member not found"}), 404
+
+        member = result.member
+        snapshot = result.utilization_snapshot
+        prediction = result.xgboost_prediction
+        anomaly = result.anomaly_result
+        response = CareNavigationService().generate_recommendation(
+            member_data={
+                "member_id": member.id,
+                "age": member.age,
+                "chronic_condition_count": member.chronic_condition_count,
+            },
+            utilization_data={
+                "ed_visit_count": snapshot.ed_visit_count if snapshot else None,
+                "inpatient_visit_count": snapshot.inpatient_visit_count if snapshot else None,
+                "outpatient_visit_count": snapshot.outpatient_visit_count if snapshot else None,
+                "provider_count": snapshot.provider_count if snapshot else None,
+            },
+            ml_data={
+                "high_utilization_probability": (
+                    prediction.high_utilization_probability if prediction else None
+                )
+            },
+            anomaly_data={"anomaly_flag": anomaly.anomaly_flag if anomaly else None},
+        )
+    return jsonify(response)
 
 
 @navigation_blueprint.post("/navigation/action", strict_slashes=False)
