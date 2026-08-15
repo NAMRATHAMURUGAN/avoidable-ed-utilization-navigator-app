@@ -6,6 +6,7 @@ from backend.models.member import Member
 from backend.models.model_run import ModelRun
 from backend.models.prediction import XGBoostUtilizationPrediction
 from backend.models.provider import Provider
+from backend.models.user import User
 from backend.models.utilization import MemberUtilizationSnapshot
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "TriageEncounter",
     "NavigationAction",
     "Provider",
+    "User",
 ]
