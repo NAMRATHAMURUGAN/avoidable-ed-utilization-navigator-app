@@ -27,19 +27,17 @@ def triage():
     if data is None:
         return jsonify({"error": "Malformed JSON request payload"}), 400
 
-<<<<<<< HEAD
+    current_user = get_current_user()
+    allow_member_linkage = current_user is not None and current_user.role == "PAYER"
+
     try:
-        response = triage_service.process_triage_request(data)
+        response = triage_service.process_triage_request(
+            data, allow_member_linkage=allow_member_linkage
+        )
     except triage_service.TriageValidationError as error:
         return jsonify({"error": str(error)}), 400
     except triage_service.TriageMemberNotFoundError as error:
         return jsonify({"error": str(error)}), 404
-=======
-    current_user = get_current_user()
-    allow_member_linkage = current_user is not None and current_user.role == "PAYER"
-
-    response = triage_service.process_triage_request(
-        data, allow_member_linkage=allow_member_linkage
-    )
->>>>>>> origin/main
+    except triage_service.TriagePersistenceError as error:
+        return jsonify({"error": str(error)}), 503
     return jsonify(response)

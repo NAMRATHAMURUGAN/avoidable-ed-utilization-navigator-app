@@ -517,7 +517,6 @@ class ApiEndpointsTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data, {"error": "Content-Type must be application/json"})
 
-<<<<<<< HEAD
         # Empty JSON object is invalid; a clinical recommendation cannot be inferred.
         empty_res = self.client.post("/api/triage", json={})
         self.assertEqual(empty_res.status_code, 400)
@@ -528,22 +527,29 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertEqual(array_res.content_type, "application/json")
 
     def test_post_triage_valid_member_and_unknown_member_validation(self) -> None:
-        valid = self.client.post("/api/triage", json={
-            "patientId": "CMS-A894-201",
-            "chiefComplaint": "Medication review follow-up",
-            "associatedSymptoms": [],
-            "selectedRedFlags": [],
-            "hasRedFlags": False,
-        })
-        self.assertEqual(valid.status_code, 200)
-        self.assertEqual(valid.get_json()["patientContext"]["beneficiaryId"], "CMS-A894-201")
+        # Member-linked patientContext/404-on-unknown-member behavior now
+        # requires an authenticated PAYER caller (see triage_service.py's
+        # allow_member_linkage gate); log in as PAYER to exercise it.
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
 
-        unknown = self.client.post("/api/triage", json={
-            "patientId": "CMS-UNKNOWN-1",
-            "chiefComplaint": "Medication review",
-        })
-        self.assertEqual(unknown.status_code, 404)
-        self.assertEqual(unknown.get_json(), {"error": "Patient not found"})
+            valid = self.client.post("/api/triage", json={
+                "patientId": "CMS-A894-201",
+                "chiefComplaint": "Medication review follow-up",
+                "associatedSymptoms": [],
+                "selectedRedFlags": [],
+                "hasRedFlags": False,
+            })
+            self.assertEqual(valid.status_code, 200)
+            self.assertEqual(valid.get_json()["patientContext"]["beneficiaryId"], "CMS-A894-201")
+
+            unknown = self.client.post("/api/triage", json={
+                "patientId": "CMS-UNKNOWN-1",
+                "chiefComplaint": "Medication review",
+            })
+            self.assertEqual(unknown.status_code, 404)
+            self.assertEqual(unknown.get_json(), {"error": "Patient not found"})
 
     def test_post_triage_rejects_invalid_field_types_and_lengths(self) -> None:
         invalid_payloads = [
@@ -560,14 +566,17 @@ class ApiEndpointsTestCase(unittest.TestCase):
                 response = self.client.post("/api/triage", json=payload)
                 self.assertEqual(response.status_code, 400)
                 self.assertIsInstance(response.get_json(), dict)
-=======
-        # Empty JSON object should process safely without crashing
-        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
-            empty_res = self.client.post("/api/triage", json={})
-        self.assertEqual(empty_res.status_code, 200)
-        empty_data = empty_res.get_json()
-        self.assertFalse(empty_data["isEmergencyRedFlag"])
->>>>>>> origin/main
+
+    def test_post_triage_persistence_failure_returns_503(self) -> None:
+        """TriagePersistenceError must map to 503, matching the existing
+        persistence-failure convention already used by
+        POST /api/navigation/action (see test_navigation_history.py)."""
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.triage_service.EncounterRepository.create_encounter") as create_encounter:
+            create_encounter.return_value = type("UnsavedEncounter", (), {"id": None})()
+            response = self.client.post("/api/triage", json={"chiefComplaint": "Mild headache"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {"error": "Unable to record triage encounter"})
 
     def test_get_providers_returns_database_providers(self) -> None:
         with patch("backend.services.provider_service.session_scope", self._mock_session_scope):
@@ -587,9 +596,13 @@ class ApiEndpointsTestCase(unittest.TestCase):
                 self.assertEqual(response.content_type, "application/json")
 
     def test_patient_query_and_identifier_validation(self) -> None:
-        self.assertEqual(self.client.get("/api/patients?risk=unknown").status_code, 400)
-        self.assertEqual(self.client.get("/api/patients?search=" + ("x" * 101)).status_code, 400)
-        self.assertEqual(self.client.get("/api/patients/" + ("x" * 65)).status_code, 400)
+        # /api/patients is PAYER-only; log in first so these assertions
+        # exercise query/identifier validation rather than the auth gate.
+        with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
+            self.assertEqual(self.client.get("/api/patients?risk=unknown").status_code, 400)
+            self.assertEqual(self.client.get("/api/patients?search=" + ("x" * 101)).status_code, 400)
+            self.assertEqual(self.client.get("/api/patients/" + ("x" * 65)).status_code, 400)
 
     def test_flask_errors_are_json(self) -> None:
         response = self.client.get("/api/not-a-route")

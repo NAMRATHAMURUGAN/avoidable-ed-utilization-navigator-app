@@ -2,9 +2,10 @@
 
 GET /patients/<id>/history exposes a CMS member's full triage/navigation
 history and is PAYER-only. POST /navigation/action and the session-history
-lookup remain reachable anonymously (see inline notes) to preserve the
-existing anonymous patient navigation flow; only the member-linking branch
-of the action endpoint requires PAYER.
+lookup remain reachable anonymously to preserve the existing anonymous
+patient navigation flow; only the member-linking branch of the action
+endpoint requires PAYER. Provider existence is validated against
+ProviderRepository; no mock provider data is seeded on this request path.
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+from backend.repositories.provider_repository import ProviderRepository
+from backend.routes.patients import validate_patient_identifier
+from backend.services.auth_service import get_current_user
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
 VALID_ACTION_TYPES = {"PROVIDER_SELECTED", "APPOINTMENT_BOOKED"}
@@ -81,13 +85,46 @@ def record_navigation_action():
         return jsonify({"error": "patientId and member_id must match when both are supplied"}), 400
     patient_id_raw = supplied_patient_ids[0] if supplied_patient_ids else None
     member_id: int | None = None
+    if patient_id_raw is not None:
+        if isinstance(patient_id_raw, bool) or not isinstance(patient_id_raw, (str, int)):
+            return jsonify({"error": "patientId must be a string or integer identifier"}), 400
+        error = validate_patient_identifier(str(patient_id_raw).strip())
+        if error:
+            return jsonify({"error": error}), 400
+
+    session_id = data.get("sessionId")
+    if session_id is not None:
+        error = _validate_identifier(session_id, "sessionId")
+        if error:
+            return jsonify({"error": error}), 400
+
+    selected_provider_id = data.get("selectedProviderId")
+    if selected_provider_id is not None:
+        error = _validate_identifier(selected_provider_id, "selectedProviderId")
+        if error:
+            return jsonify({"error": error}), 400
+
+    selected_acuity = data.get("selectedAcuity")
+    if selected_acuity is not None and selected_acuity not in VALID_ACUITIES:
+        return jsonify({"error": "selectedAcuity is not supported"}), 400
+
+    action_details = data.get("actionDetails")
+    if action_details is not None and not isinstance(action_details, dict):
+        return jsonify({"error": "actionDetails must be an object"}), 400
+
+    # Attaching an action directly to an arbitrary CMS member requires an
+    # authenticated PAYER caller; there is no User<->Member mapping to
+    # authorize this for an unauthenticated or PATIENT caller. This does not
+    # affect inheriting member_id from an already-linked encounter below,
+    # since that link can only exist if a PAYER established it during triage.
+    current_user = get_current_user()
+    is_payer = current_user is not None and current_user.role == "PAYER"
 
     now = datetime.now(timezone.utc)
     action_id: int | None = None
 
     with session_scope() as session:
-        # Resolve member_id if patientId string/bene_id is passed
-        if patient_id_raw is not None:
+        if patient_id_raw is not None and is_payer:
             m_repo = MemberRepository(session)
             member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
             if member_res is None:
@@ -122,7 +159,6 @@ def record_navigation_action():
 
         if selected_provider_id is not None:
             provider_repo = ProviderRepository(session)
-            provider_repo.seed_providers(MOCK_PROVIDERS)
             if provider_repo.get_by_id(selected_provider_id) is None:
                 return jsonify({"error": "Provider not found"}), 404
 
@@ -248,4 +284,3 @@ def get_session_history(session_id: str):
                 for act in actions
             ],
         })
-
