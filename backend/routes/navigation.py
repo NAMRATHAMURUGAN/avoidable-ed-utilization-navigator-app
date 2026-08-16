@@ -29,6 +29,10 @@ def get_member_navigation_recommendations(member_id: str):
             member_id,
             xgb_model_run_id=xgb_run.model_run_id if xgb_run else None,
             anomaly_model_run_id=anomaly_run.model_run_id if anomaly_run else None,
+            # A missing run must mean an unavailable signal.  It must not fall
+            # back to an unscoped historical output from another/older run.
+            include_xgboost=xgb_run is not None,
+            include_anomaly=anomaly_run is not None,
         )
         if result is None:
             return jsonify({"error": "Member not found"}), 404
