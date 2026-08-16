@@ -29,6 +29,8 @@ from backend.models import (
     MemberUtilizationSnapshot,
     ModelRun,
     NavigationAction,
+    Provider,
+    TriageEncounter,
     UtilizationAnomalyResult,
     XGBoostUtilizationPrediction,
 )
@@ -152,6 +154,39 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
             generated_at=datetime.now(timezone.utc),
         )
         self.db_session.add_all([prediction, anomaly])
+
+        # A real, explicitly-seeded provider referenced by selectedProviderId
+        # in the navigation-action tests below. Production routes no longer
+        # auto-seed MOCK_PROVIDERS, so tests must seed what they need.
+        self.db_session.add(Provider(
+            id="prov-01",
+            name="Test Provider prov-01",
+            type="URGENT_CARE",
+            address="123 Test St",
+            city_state_zip="Testville, TS 00000",
+            distance_miles=1.0,
+            operating_hours="24/7",
+            phone="555-0100",
+            services=[],
+            is_demo=False,
+        ))
+        self.db_session.commit()
+
+    def _seed_anonymous_encounter(self, session_id: str) -> None:
+        """Seed a TriageEncounter with no member link, giving navigation-action
+        tests a valid sessionId anchor without requiring a real /api/triage call."""
+        self.db_session.add(TriageEncounter(
+            session_id=session_id,
+            chief_complaint="Test complaint",
+            is_emergency=False,
+            recommended_acuity="TELEHEALTH",
+            urgency_level="SAME_DAY_TELEHEALTH",
+            recommended_setting_name="Telehealth",
+            clinical_rationale="Test",
+            safety_disclaimer="Test",
+            rule_set_version="1.0.0",
+            created_at=datetime.now(timezone.utc),
+        ))
         self.db_session.commit()
 
     def _register_and_login(self, email: str, role: str) -> None:
@@ -313,10 +348,12 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
 
     def test_navigation_action_anonymous_without_patient_id_succeeds(self) -> None:
         with patch("backend.routes.navigation.session_scope", self._mock_session_scope):
+            self._seed_anonymous_encounter("anon-session-no-patient")
             response = self.client.post(
                 "/api/navigation/action",
                 json={
                     "actionType": "PROVIDER_SELECTED",
+                    "sessionId": "anon-session-no-patient",
                     "selectedProviderId": "prov-01",
                     "selectedAcuity": "TELEHEALTH",
                 },
@@ -326,10 +363,12 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
 
     def test_navigation_action_anonymous_with_patient_id_does_not_link_member(self) -> None:
         with patch("backend.routes.navigation.session_scope", self._mock_session_scope):
+            self._seed_anonymous_encounter("anon-session-with-patient")
             response = self.client.post(
                 "/api/navigation/action",
                 json={
                     "actionType": "PROVIDER_SELECTED",
+                    "sessionId": "anon-session-with-patient",
                     "patientId": "1",
                     "selectedProviderId": "prov-01",
                     "selectedAcuity": "TELEHEALTH",
@@ -345,11 +384,13 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
     def test_navigation_action_patient_role_with_patient_id_does_not_link_member(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope), \
              patch("backend.routes.navigation.session_scope", self._mock_session_scope):
+            self._seed_anonymous_encounter("patient-session-with-patient")
             self._register_and_login("patient-nav@example.com", "PATIENT")
             response = self.client.post(
                 "/api/navigation/action",
                 json={
                     "actionType": "PROVIDER_SELECTED",
+                    "sessionId": "patient-session-with-patient",
                     "patientId": "1",
                     "selectedProviderId": "prov-01",
                     "selectedAcuity": "TELEHEALTH",
