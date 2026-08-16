@@ -59,6 +59,23 @@ class NavigationHistoryTestCase(unittest.TestCase):
             chronic_condition_count=2,
         )
         self.db_session.add(m)
+
+        # Real, explicitly-seeded providers referenced by selectedProviderId
+        # across this file's tests. Production routes no longer auto-seed
+        # MOCK_PROVIDERS, so tests must seed the exact records they need.
+        for provider_id in ("prov-01", "prov-02"):
+            self.db_session.add(Provider(
+                id=provider_id,
+                name=f"Test Provider {provider_id}",
+                type="URGENT_CARE",
+                address="123 Test St",
+                city_state_zip="Testville, TS 00000",
+                distance_miles=1.0,
+                operating_hours="24/7",
+                phone="555-0100",
+                services=[],
+                is_demo=False,
+            ))
         self.db_session.commit()
 
     def _login_as_payer(self) -> None:
@@ -269,7 +286,7 @@ class NavigationHistoryTestCase(unittest.TestCase):
                 "encounterId": enc_id,
                 "sessionId": sess_id,
                 "actionType": "APPOINTMENT_BOOKED",
-                "selectedProviderId": "prov-telehealth-01",
+                "selectedProviderId": "prov-01",
                 "selectedAcuity": "TELEHEALTH",
                 "actionDetails": {
                     "providerName": "24/7 Virtual Telehealth Network",
@@ -289,6 +306,85 @@ class NavigationHistoryTestCase(unittest.TestCase):
             self.assertEqual(sess_data["totalActions"], 1)
             self.assertEqual(sess_data["actions"][0]["actionType"], "APPOINTMENT_BOOKED")
             self.assertEqual(sess_data["actions"][0]["actionDetails"]["appointmentTime"], "Today at 3:00 PM")
+
+    def test_navigation_action_validation_and_persistence_failure(self) -> None:
+        with patch("backend.routes.navigation.session_scope", self._mock_session_scope):
+            invalid_payloads = [
+                {},
+                {"actionType": "UNKNOWN", "patientId": "1001"},
+                {"actionType": "PROVIDER_SELECTED", "encounterId": "zero"},
+                {"actionType": "PROVIDER_SELECTED", "patientId": "9999"},
+                {"actionType": "PROVIDER_SELECTED", "patientId": "1001", "actionDetails": []},
+                {"actionType": "PROVIDER_SELECTED", "patientId": "1001", "selectedAcuity": "INVALID"},
+                {"actionType": "PROVIDER_SELECTED", "patientId": "1001", "selectedProviderId": "missing"},
+            ]
+            for payload in invalid_payloads:
+                with self.subTest(payload=payload):
+                    response = self.client.post("/api/navigation/action", json=payload)
+                    # Unauthenticated + patientId-only (no encounterId/sessionId)
+                    # now correctly hits the "needs a valid anchor" check (400)
+                    # rather than resolving patientId, since member-linkage
+                    # requires an authenticated PAYER caller.
+                    self.assertIn(response.status_code, {400, 404})
+                    self.assertIsInstance(response.get_json(), dict)
+
+        # Member-linked persistence-failure handling requires patientId to
+        # actually resolve, which requires an authenticated PAYER caller.
+        with patch("backend.routes.navigation.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
+            with patch("backend.routes.navigation.EncounterRepository.create_action") as create_action:
+                create_action.return_value = type("UnsavedAction", (), {"id": None})()
+                response = self.client.post("/api/navigation/action", json={
+                    "actionType": "PROVIDER_SELECTED",
+                    "patientId": "1001",
+                })
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.get_json(), {"error": "Unable to record navigation action"})
+
+    def test_navigation_rejects_encounter_member_mismatch_and_invalid_history_identifiers(self) -> None:
+        from datetime import datetime, timezone
+
+        # The encounterId/patientId mismatch check depends on patientId
+        # actually resolving to a member, which requires an authenticated
+        # PAYER caller; /api/patients/<id>/history is also PAYER-only.
+        with patch("backend.routes.navigation.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
+            other_member = Member(
+                id=1002,
+                bene_id="CMS-TEST-1002",
+                age=70,
+                gender="Female",
+                dual_eligibility_months=0,
+                chronic_condition_count=1,
+            )
+            self.db_session.add(other_member)
+            encounter = TriageEncounter(
+                member_id=1001,
+                session_id="valid-session-1",
+                chief_complaint="Rash",
+                is_emergency=False,
+                recommended_acuity="TELEHEALTH",
+                urgency_level="SAME_DAY_TELEHEALTH",
+                recommended_setting_name="Telehealth",
+                clinical_rationale="Test",
+                safety_disclaimer="Test",
+                rule_set_version="1.0.0",
+                created_at=datetime.now(timezone.utc),
+            )
+            self.db_session.add(encounter)
+            self.db_session.commit()
+            mismatch = self.client.post("/api/navigation/action", json={
+                "actionType": "PROVIDER_SELECTED",
+                "encounterId": encounter.id,
+                "patientId": "CMS-TEST-1002",
+            })
+            self.assertEqual(mismatch.status_code, 400)
+            self.assertEqual(mismatch.get_json(), {"error": "encounterId does not belong to patientId"})
+
+            self.assertEqual(self.client.get("/api/patients/invalid%20id/history").status_code, 400)
+            self.assertEqual(self.client.get("/api/navigation/session/invalid%20session").status_code, 400)
 
 
 if __name__ == "__main__":
