@@ -24,7 +24,9 @@ from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
 
 
-def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str, Any]:
+def _execute_triage_request(
+    session: Session, data: dict[str, Any], *, allow_member_linkage: bool
+) -> dict[str, Any]:
     chief_complaint = str(data.get("chiefComplaint", "") or "").strip()
     symptoms_duration = str(data.get("symptomsDuration", "") or "").strip()
 
@@ -50,7 +52,12 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
     patient_context: dict[str, Any] | None = None
     proactive_rec: dict[str, Any] | None = None
 
-    if patient_id_raw is not None:
+    # Member-linked ML enrichment (patientContext / proactiveRecommendation)
+    # is only ever resolved for an authenticated PAYER caller. There is no
+    # User<->Member mapping, so an unauthenticated or PATIENT caller
+    # supplying a patientId is treated identically to anonymous triage: the
+    # safety-engine screening below is entirely unaffected either way.
+    if patient_id_raw is not None and allow_member_linkage:
         m_repo = MemberRepository(session)
         run_repo = ModelRunRepository(session)
         # Explicitly resolve the latest model run for each model type, mirroring
@@ -239,11 +246,22 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
 
 
 def process_triage_request(
-    data: dict[str, Any], session: Session | None = None
+    data: dict[str, Any],
+    session: Session | None = None,
+    *,
+    allow_member_linkage: bool = False,
 ) -> dict[str, Any]:
-    """Process a symptom triage request via the deterministic safety engine and persist encounter."""
+    """Process a symptom triage request via the deterministic safety engine and persist encounter.
+
+    ``allow_member_linkage`` gates whether a supplied patientId is resolved
+    against CMS Member/ML data; it must only be True for an authenticated
+    PAYER caller. Defaults to False (no member linkage) so any caller that
+    doesn't explicitly authorize it gets the safe, anonymous-equivalent
+    behavior. The deterministic safety-engine screening is identical either
+    way and is never influenced by this flag.
+    """
     if session is not None:
-        return _execute_triage_request(session, data)
+        return _execute_triage_request(session, data, allow_member_linkage=allow_member_linkage)
 
     with session_scope() as sess:
-        return _execute_triage_request(sess, data)
+        return _execute_triage_request(sess, data, allow_member_linkage=allow_member_linkage)

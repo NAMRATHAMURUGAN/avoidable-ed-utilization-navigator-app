@@ -4,7 +4,9 @@ from pathlib import Path
 
 from flask import Flask, abort, send_from_directory
 
+from backend.config import get_security_settings
 from backend.routes.analytics import analytics_blueprint
+from backend.routes.auth import auth_blueprint
 from backend.routes.ml_results import ml_results_blueprint
 from backend.routes.navigation import navigation_blueprint
 from backend.routes.patients import patients_blueprint
@@ -22,12 +24,39 @@ def create_app() -> Flask:
         __name__,
         static_folder=None,
     )
+
+    # Required to sign Flask session cookies (see backend/routes/auth.py).
+    # Fails fast if unset rather than falling back to an insecure default.
+    app.config["SECRET_KEY"] = get_security_settings().secret_key
+
+    # Session cookie hardening appropriate for this same-origin, local-HTTP
+    # development architecture. SESSION_COOKIE_SECURE is left False so local
+    # HTTP development keeps working; set it to True (and serve over HTTPS)
+    # in production.
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = False
+
     app.register_blueprint(ml_results_blueprint)
     app.register_blueprint(patients_blueprint)
     app.register_blueprint(analytics_blueprint)
     app.register_blueprint(providers_blueprint)
     app.register_blueprint(triage_blueprint)
     app.register_blueprint(navigation_blueprint)
+    app.register_blueprint(auth_blueprint)
+
+    @app.after_request
+    def set_security_headers(response):
+        """Minimal, non-breaking security headers.
+
+        No Content-Security-Policy (would risk breaking the existing
+        frontend) and no Strict-Transport-Security (inappropriate for local
+        HTTP development; add it only once the app is served over HTTPS).
+        """
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
 
     @app.get("/")
     def frontend_index():

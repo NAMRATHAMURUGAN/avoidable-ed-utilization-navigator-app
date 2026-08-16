@@ -54,6 +54,19 @@ class ApiEndpointsTestCase(unittest.TestCase):
     def _mock_session_scope(self):
         yield self.db_session
 
+    def _login_as_payer(self) -> None:
+        """Register+login a PAYER user. Caller must be inside a patch of
+        backend.services.auth_service.session_scope."""
+        self.client.post(
+            "/api/auth/register",
+            json={"email": "payer-fixture@example.com", "password": "password123", "role": "PAYER"},
+        )
+        response = self.client.post(
+            "/api/auth/login",
+            json={"email": "payer-fixture@example.com", "password": "password123"},
+        )
+        assert response.status_code == 200, response.get_json()
+
     def _seed_database(self) -> None:
         xgb_run = ModelRun(
             model_run_id=1,
@@ -265,7 +278,9 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertIn("ed avoidability", interpretation)
 
     def test_get_patients_returns_all_from_database(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -279,7 +294,9 @@ class ApiEndpointsTestCase(unittest.TestCase):
             self.assertEqual(data[2]["riskLevel"], "LOW")
 
     def test_get_patient_by_id_found(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients/1")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -291,14 +308,18 @@ class ApiEndpointsTestCase(unittest.TestCase):
             self.assertEqual(data_bene["beneficiaryId"], "CMS-B412-990")
 
     def test_get_patient_by_id_not_found(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients/nonexistent-id")
             self.assertEqual(response.status_code, 404)
             data = response.get_json()
             self.assertEqual(data, {"error": "Patient not found"})
 
     def test_get_analytics_returns_database_aggregations(self) -> None:
-        with patch("backend.services.analytics_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.analytics_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/analytics")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -353,7 +374,9 @@ class ApiEndpointsTestCase(unittest.TestCase):
         return the stale (higher-ID) rows here; only explicit model_run_id scoping
         via ModelRunRepository.get_latest(...) returns the correct latest values.
         """
-        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             member = Member(
                 id=501,
                 bene_id="CMS-SCOPE-501",
