@@ -6,6 +6,8 @@ lookup remain reachable anonymously to preserve the existing anonymous
 patient navigation flow; only the member-linking branch of the action
 endpoint requires PAYER. Provider existence is validated against
 ProviderRepository; no mock provider data is seeded on this request path.
+This module also exposes live urgent-care facility discovery, ORS-backed
+driving directions, and database-backed navigation recommendations.
 """
 
 from __future__ import annotations
@@ -21,9 +23,16 @@ from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+from backend.repositories.model_run_repository import ModelRunRepository
 from backend.repositories.provider_repository import ProviderRepository
 from backend.routes.patients import validate_patient_identifier
 from backend.services.auth_service import get_current_user
+from backend.services.navigation_service import CareNavigationService
+from backend.services.urgent_care_map_service import (
+    UrgentCareMapError,
+    calculate_urgent_care_route,
+    discover_urgent_care_facilities,
+)
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
 VALID_ACTION_TYPES = {"PROVIDER_SELECTED", "APPOINTMENT_BOOKED"}
@@ -50,6 +59,89 @@ def _positive_integer(value: Any, field: str) -> tuple[int | None, str | None]:
     if parsed <= 0 or str(value).strip() not in {str(parsed), f"+{parsed}"}:
         return None, f"{field} must be a positive integer"
     return parsed, None
+
+
+@navigation_blueprint.get("/navigation/urgent-care/facilities", strict_slashes=False)
+def get_urgent_care_facilities():
+    """Return live OSM facilities explicitly identified as urgent care."""
+    try:
+        response = discover_urgent_care_facilities(
+            request.args.get("latitude"),
+            request.args.get("longitude"),
+            request.args.get("radiusMeters"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except UrgentCareMapError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    return jsonify(response)
+
+
+@navigation_blueprint.post("/navigation/urgent-care/route", strict_slashes=False)
+def get_urgent_care_route():
+    """Return a live ORS driving route for a selected urgent-care facility."""
+    if request.content_length and not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Missing JSON request payload"}), 400
+    origin = data.get("origin")
+    destination = data.get("destination")
+    if not isinstance(origin, dict) or not isinstance(destination, dict):
+        return jsonify({"error": "origin and destination are required"}), 400
+    try:
+        response = calculate_urgent_care_route(origin, destination)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except UrgentCareMapError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    return jsonify(response)
+
+
+@navigation_blueprint.get("/navigation/members/<member_id>/recommendations", strict_slashes=False)
+def get_member_navigation_recommendations(member_id: str):
+    """GET care-navigation suggestions based on available historical member data."""
+    with session_scope() as session:
+        member_repo = MemberRepository(session)
+        run_repo = ModelRunRepository(session)
+        xgb_run = run_repo.get_latest("xgboost")
+        anomaly_run = run_repo.get_latest("isolation_forest")
+        result = member_repo.get_combined_result_by_id_or_bene(
+            member_id,
+            xgb_model_run_id=xgb_run.model_run_id if xgb_run else None,
+            anomaly_model_run_id=anomaly_run.model_run_id if anomaly_run else None,
+            # A missing run must mean an unavailable signal.  It must not fall
+            # back to an unscoped historical output from another/older run.
+            include_xgboost=xgb_run is not None,
+            include_anomaly=anomaly_run is not None,
+        )
+        if result is None:
+            return jsonify({"error": "Member not found"}), 404
+
+        member = result.member
+        snapshot = result.utilization_snapshot
+        prediction = result.xgboost_prediction
+        anomaly = result.anomaly_result
+        response = CareNavigationService().generate_recommendation(
+            member_data={
+                "member_id": member.id,
+                "age": member.age,
+                "chronic_condition_count": member.chronic_condition_count,
+            },
+            utilization_data={
+                "ed_visit_count": snapshot.ed_visit_count if snapshot else None,
+                "inpatient_visit_count": snapshot.inpatient_visit_count if snapshot else None,
+                "outpatient_visit_count": snapshot.outpatient_visit_count if snapshot else None,
+                "provider_count": snapshot.provider_count if snapshot else None,
+            },
+            ml_data={
+                "high_utilization_probability": (
+                    prediction.high_utilization_probability if prediction else None
+                )
+            },
+            anomaly_data={"anomaly_flag": anomaly.anomaly_flag if anomaly else None},
+        )
+    return jsonify(response)
 
 
 @navigation_blueprint.post("/navigation/action", strict_slashes=False)

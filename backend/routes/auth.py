@@ -25,18 +25,30 @@ auth_blueprint = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 @auth_blueprint.post("/register", strict_slashes=False)
 def register():
-    """POST /api/auth/register - Create a new login identity."""
+    """POST /api/auth/register - Create a new PATIENT login identity.
+
+    Public self-registration only ever creates a PATIENT account. PAYER
+    remains a valid stored role (see backend/models/user.py and
+    role_required), but it is intentionally not self-service: a caller
+    requesting anything other than PATIENT is rejected outright rather than
+    silently downgraded, so an attempted role-escalation is never masked as
+    an ordinary PATIENT signup.
+    """
     if request.content_length and not request.is_json:
         return jsonify({"error": "Content-Type must be application/json"}), 400
     data = request.get_json(silent=True)
     if data is None:
         data = {}
 
+    requested_role = data.get("role")
+    if requested_role is not None and str(requested_role).strip().upper() != "PATIENT":
+        return jsonify({"error": "Public registration is only available for the PATIENT role."}), 400
+
     try:
         user = register_user(
             email=data.get("email"),
             password=data.get("password"),
-            role=data.get("role"),
+            role="PATIENT",
         )
     except AuthValidationError as error:
         return jsonify({"error": str(error)}), 400

@@ -84,6 +84,8 @@ class MemberRepository:
         identifier: str,
         xgb_model_run_id: int | None = None,
         anomaly_model_run_id: int | None = None,
+        include_xgboost: bool = True,
+        include_anomaly: bool = True,
     ) -> MemberAnalyticalResult | None:
         member = self.get_by_bene_id(identifier)
         if member is None:
@@ -97,8 +99,16 @@ class MemberRepository:
         return MemberAnalyticalResult(
             member=member,
             utilization_snapshot=self.get_utilization(member.id),
-            xgboost_prediction=self.get_xgboost_result(member.id, xgb_model_run_id),
-            anomaly_result=self.get_anomaly_result(member.id, anomaly_model_run_id),
+            xgboost_prediction=(
+                self.get_xgboost_result(member.id, xgb_model_run_id)
+                if include_xgboost
+                else None
+            ),
+            anomaly_result=(
+                self.get_anomaly_result(member.id, anomaly_model_run_id)
+                if include_anomaly
+                else None
+            ),
         )
 
     def get_all_combined_results(

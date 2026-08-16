@@ -1,22 +1,17 @@
-"""Rule-based care navigation recommendations.
-
-This module is deliberately independent of Flask, SQLAlchemy, and model-loading
-code.  Callers provide already retrieved member, utilization, prediction, and
-anomaly dictionaries and receive a JSON-ready recommendation dictionary.
-"""
+"""Informational, non-clinical care-navigation recommendations."""
 
 from __future__ import annotations
 
-import math
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 
 class CareNavigationService:
-    """Generate proactive, historical-utilization navigation recommendations.
+    """Translate available member utilization data into coordination suggestions.
 
-    This service is not a clinical triage or emergency-decision component.  Its
-    output can help prioritize care-navigation follow-up only after an
-    authoritative safety screen has completed elsewhere.
+    The rules deliberately use only historical administrative and model data. They
+    never determine medical necessity, emergency necessity, ED avoidability, or
+    clinical deterioration.
     """
 
     def generate_recommendation(
@@ -26,212 +21,189 @@ class CareNavigationService:
         ml_data: Mapping[str, Any],
         anomaly_data: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Return a historical-utilization navigation recommendation.
-
-        Parameters are intentionally plain mappings so routes or orchestrators
-        can supply database records and ML responses without this service being
-        coupled to either implementation.
-        """
-        member_id = member_data.get("BENE_ID", member_data.get("bene_id"))
-        predicted_probability = self._optional_probability(
-            ml_data.get("predicted_probability", ml_data.get("high_utilization_probability"))
+        """Return a JSON-ready, informational navigation recommendation."""
+        member_id = self._first(member_data, "member_id", "id", "bene_id", "BENE_ID")
+        age = self._number(member_data.get("age"))
+        chronic_conditions = self._number(
+            self._first(member_data, "chronic_condition_count", "chronicConditionCount")
         )
-        ed_visit_count = self._optional_nonnegative_number(utilization_data.get("ed_visit_count"))
-        anomaly_flag = self._optional_flag(anomaly_data.get("anomaly_flag"))
+        ed_visits = self._number(self._first(utilization_data, "ed_visit_count", "edVisitCount12m"))
+        inpatient_visits = self._number(
+            self._first(utilization_data, "inpatient_visit_count", "inpatientVisitCount")
+        )
+        outpatient_visits = self._number(
+            self._first(utilization_data, "outpatient_visit_count", "outpatientVisitCount")
+        )
+        provider_count = self._number(self._first(utilization_data, "provider_count", "providerCount"))
+        probability = self._probability(
+            self._first(ml_data, "high_utilization_probability", "predicted_probability")
+        )
+        anomaly_flag = self._flag(anomaly_data.get("anomaly_flag"))
 
-        missing_fields = self._missing_history_fields(
-            member_id=member_id,
-            ed_visit_count=ed_visit_count,
-            predicted_probability=predicted_probability,
+        priority = self._priority(
+            ed_visits=ed_visits,
+            inpatient_visits=inpatient_visits,
+            probability=probability,
             anomaly_flag=anomaly_flag,
         )
-        if missing_fields:
-            return self._insufficient_history_result(missing_fields)
-
-        # Values are known after the explicit availability check above.
-        assert ed_visit_count is not None
-        assert predicted_probability is not None
-        assert anomaly_flag is not None
-
-        if anomaly_flag:
-            recommended_action = "care_management_followup"
-            priority_level = "high"
-        elif predicted_probability > 0.7:
-            recommended_action = "care_management_followup"
-            priority_level = "medium"
-        elif ed_visit_count > 2:
-            recommended_action = "primary_care"
-            priority_level = "medium"
-        else:
-            recommended_action = "telehealth"
-            priority_level = "low"
+        recommendations = self._recommendations(
+            age=age,
+            chronic_conditions=chronic_conditions,
+            ed_visits=ed_visits,
+            inpatient_visits=inpatient_visits,
+            outpatient_visits=outpatient_visits,
+            provider_count=provider_count,
+            probability=probability,
+            anomaly_flag=anomaly_flag,
+            priority=priority,
+        )
 
         return {
-            "recommended_action": recommended_action,
-            "priority_level": priority_level,
-            "confidence": self._determine_confidence(
-                anomaly_flag=anomaly_flag,
-                predicted_probability=predicted_probability,
-                ed_visit_count=ed_visit_count,
-            ),
-            "confidence_interpretation": (
-                "Rule-engine confidence for historical-utilization navigation "
-                "prioritization; not a clinical probability or emergency-risk score."
-            ),
-            "proactive_interpretation": (
-                "This is a proactive, historical-utilization-based care-navigation "
-                "recommendation. It is not a clinical triage, medical-necessity, "
-                "ED-avoidability, or emergency-status decision."
-            ),
-            "data_availability": {
-                "status": "available",
-                "insufficient_history": False,
-                "missing_fields": [],
-            },
-            "reasoning": self._build_reasoning(
-                member_data=member_data,
-                anomaly_flag=anomaly_flag,
-                predicted_probability=predicted_probability,
-                ed_visit_count=ed_visit_count,
-                recommended_action=recommended_action,
-            ),
+            "member_id": str(member_id) if member_id is not None else None,
+            "navigation_priority": priority,
+            "recommendations": recommendations,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _determine_confidence(
-        self,
+    @staticmethod
+    def _priority(
         *,
-        anomaly_flag: bool,
-        predicted_probability: float,
-        ed_visit_count: float,
-    ) -> float:
-        """Return a bounded rule-engine confidence, never a clinical probability."""
-        if anomaly_flag:
-            return 0.90
-        if predicted_probability > 0.7:
-            return round(min(0.90, max(0.70, predicted_probability)), 2)
-        if ed_visit_count > 2:
-            return 0.70
-        return 0.60
+        ed_visits: float | None,
+        inpatient_visits: float | None,
+        probability: float | None,
+        anomaly_flag: bool | None,
+    ) -> str:
+        """Set priority from observed utilization characteristics only."""
+        if anomaly_flag is True or (probability is not None and probability > 0.70):
+            return "HIGH"
+        if (
+            (ed_visits is not None and ed_visits > 2)
+            or (inpatient_visits is not None and inpatient_visits > 0)
+            or (probability is not None and probability > 0.40)
+        ):
+            return "MEDIUM"
+        return "LOW"
 
-    def _build_reasoning(
-        self,
+    @staticmethod
+    def _recommendations(
         *,
-        member_data: Mapping[str, Any],
-        anomaly_flag: bool,
-        predicted_probability: float,
-        ed_visit_count: float,
-        recommended_action: str,
-    ) -> list[str]:
-        """Build human-readable, non-clinical reasons for the selected action."""
-        reasoning: list[str] = []
-        member_id = member_data.get("BENE_ID", member_data.get("bene_id"))
-        if member_id is not None:
-            reasoning.append(f"Recommendation generated for member {member_id}.")
+        age: float | None,
+        chronic_conditions: float | None,
+        ed_visits: float | None,
+        inpatient_visits: float | None,
+        outpatient_visits: float | None,
+        provider_count: float | None,
+        probability: float | None,
+        anomaly_flag: bool | None,
+        priority: str,
+    ) -> list[dict[str, str]]:
+        recommendations: list[dict[str, str]] = []
 
-        if anomaly_flag:
-            reasoning.append(
-                "Isolation Forest flagged an unusual observed utilization pattern; "
-                "this is not a clinical-risk, medical-necessity, or ED-avoidability finding."
+        def add(category: str, recommendation: str, reason: str) -> None:
+            recommendations.append(
+                {"category": category, "recommendation": recommendation, "reason": reason}
             )
-        elif predicted_probability > 0.7:
-            reasoning.append(
-                "The historical high-utilization-pattern probability "
-                f"is {predicted_probability:.2f}, above the 0.70 navigation rule; "
-                "it is not a current clinical-risk or emergency-status score."
+
+        if priority == "HIGH":
+            high_reason = (
+                "An unusual historical utilization pattern was recorded."
+                if anomaly_flag is True
+                else "The historical high-utilization-pattern score is above the coordination threshold."
             )
-        elif ed_visit_count > 2:
-            reasoning.append(
-                f"The member has {ed_visit_count:g} ED visits, above the threshold of 2."
+            add("Care Coordination", "Case management referral", high_reason)
+            add("Care Coordination", "Care navigator outreach", high_reason)
+        elif priority == "MEDIUM":
+            if ed_visits is not None and ed_visits > 2:
+                reason = f"{ed_visits:g} historical ED visits were recorded in the available snapshot."
+            elif inpatient_visits is not None and inpatient_visits > 0:
+                reason = f"{inpatient_visits:g} inpatient visit(s) were recorded in the available snapshot."
+            else:
+                reason = "The historical high-utilization-pattern score is above the monitoring threshold."
+            add("Primary Care Follow-up", "Schedule PCP follow-up", reason)
+
+        if chronic_conditions is not None and chronic_conditions >= 2:
+            add(
+                "Chronic Disease Management",
+                "Chronic condition management review",
+                f"The member record lists {chronic_conditions:g} chronic condition(s).",
+            )
+            add(
+                "Chronic Disease Management",
+                "Medication review",
+                "A medication review can support coordination across documented chronic conditions.",
+            )
+
+        if ed_visits is not None and ed_visits > 0:
+            add(
+                "Utilization Monitoring",
+                "Monitor utilization trends",
+                f"{ed_visits:g} historical ED visit(s) are present in the available utilization snapshot.",
+            )
+        if provider_count is not None and provider_count >= 3:
+            add(
+                "Utilization Monitoring",
+                "Review provider fragmentation",
+                f"The utilization snapshot includes {provider_count:g} provider(s).",
+            )
+        if outpatient_visits is not None and outpatient_visits > 0:
+            add(
+                "Utilization Monitoring",
+                "Review care continuity",
+                f"{outpatient_visits:g} outpatient visit(s) are present in the available utilization snapshot.",
+            )
+
+        if age is not None and age >= 65:
+            add(
+                "Primary Care Follow-up",
+                "Preventive wellness review",
+                "Age is available in the member record; a preventive wellness review is a care-coordination option.",
+            )
+
+        if not recommendations:
+            add(
+                "Patient Education",
+                "Care-access education",
+                "Available utilization data does not meet a higher navigation-priority rule.",
             )
         else:
-            reasoning.append("No high-priority utilization signal met the current rules.")
-
-        reasoning.append(
-            f"Proactive care-navigation action: {recommended_action}; this is not a "
-            "medically required care-setting decision."
-        )
-        return reasoning
-
-    @staticmethod
-    def _optional_nonnegative_number(value: Any) -> float | None:
-        """Return a valid historical numeric value without inventing a default."""
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None
-        if not math.isfinite(parsed) or parsed < 0:
-            return None
-        return parsed
-
-    @classmethod
-    def _optional_probability(cls, value: Any) -> float | None:
-        """Return a valid historical pattern probability in the model's range."""
-        parsed = cls._optional_nonnegative_number(value)
-        if parsed is None or parsed > 1:
-            return None
-        return parsed
+            add(
+                "Patient Education",
+                "Follow-up adherence reminders",
+                "Reminder support can help with completion of selected care-navigation follow-up.",
+            )
+        return recommendations
 
     @staticmethod
-    def _optional_flag(value: Any) -> bool | None:
-        """Interpret known flag representations without treating missing data as false."""
-        if value is None:
-            return None
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes"}:
-                return True
-            if normalized in {"0", "false", "no"}:
-                return False
-            return None
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)) and value in {0, 1}:
-            return bool(value)
+    def _first(data: Mapping[str, Any], *keys: str) -> Any:
+        for key in keys:
+            value = data.get(key)
+            if value is not None:
+                return value
         return None
 
     @staticmethod
-    def _missing_history_fields(
-        *,
-        member_id: Any,
-        ed_visit_count: float | None,
-        predicted_probability: float | None,
-        anomaly_flag: bool | None,
-    ) -> list[str]:
-        """Identify required historical signals that were unavailable or invalid."""
-        missing_fields: list[str] = []
-        if member_id is None or not str(member_id).strip():
-            missing_fields.append("member_id")
-        if ed_visit_count is None:
-            missing_fields.append("ed_visit_count")
-        if predicted_probability is None:
-            missing_fields.append("high_utilization_probability")
-        if anomaly_flag is None:
-            missing_fields.append("anomaly_flag")
-        return missing_fields
+    def _number(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number >= 0 else None
+
+    @classmethod
+    def _probability(cls, value: Any) -> float | None:
+        number = cls._number(value)
+        return number if number is not None and number <= 1 else None
 
     @staticmethod
-    def _insufficient_history_result(missing_fields: list[str]) -> dict[str, Any]:
-        """Return a safe result when proactive-navigation history is incomplete."""
-        return {
-            "recommended_action": "care_management_followup",
-            "priority_level": "unavailable",
-            "confidence": None,
-            "confidence_interpretation": (
-                "No rule-engine confidence is available because required historical "
-                "utilization data is incomplete."
-            ),
-            "proactive_interpretation": (
-                "Historical data is insufficient for proactive care-navigation "
-                "prioritization. This is not a clinical triage or emergency-status decision."
-            ),
-            "data_availability": {
-                "status": "insufficient_history",
-                "insufficient_history": True,
-                "missing_fields": missing_fields,
-            },
-            "reasoning": [
-                "Required historical utilization or model data is unavailable or invalid.",
-                "No utilization values, clinical-risk conclusion, or lower-acuity care conclusion was inferred.",
-                "A care-management follow-up is suggested only to resolve missing historical context.",
-            ],
-        }
+    def _flag(value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes"}:
+                return True
+            if normalized in {"false", "0", "no"}:
+                return False
+        return None

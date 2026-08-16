@@ -5,14 +5,20 @@
  */
 
 const state = {
+  currentUser: null, // { id, email, role } from GET /api/auth/me; role is 'PATIENT' | 'PAYER'
   activeRole: 'PATIENT', // 'PATIENT' | 'PAYER_ADMIN'
   activeRoute: 'triage',
   patients: [],
   patientsLoaded: false,
   analytics: null,
+  analyticsLoaded: false,
   currentEncounter: null,
   currentSessionId: null,
   selectedMemberId: null,
+  urgentCareMap: {
+    origin: null, facilities: [], selectedFacility: null, route: null,
+    status: 'idle', error: null, leafletMap: null,
+  },
   patientProfile: {
     name: 'Jane Doe',
     age: 42,
@@ -62,6 +68,133 @@ async function request(path, options = {}) {
     console.error(`API Error [${path}]:`, err);
     throw err;
   }
+}
+
+/**
+ * AUTHENTICATION: login / register / logout / session bootstrap
+ * The server is the sole source of truth for role; the frontend never lets
+ * a caller pick a role for themselves.
+ */
+function showAuthScreen(mode = 'login') {
+  $('#app-shell')?.classList.add('role-hidden');
+  $('#auth-screen')?.classList.remove('role-hidden');
+  setAuthMode(mode);
+}
+
+function showAppShell() {
+  $('#auth-screen')?.classList.add('role-hidden');
+  $('#app-shell')?.classList.remove('role-hidden');
+  const emailLabel = $('#current-user-email');
+  if (emailLabel) emailLabel.textContent = state.currentUser?.email || '';
+}
+
+function setAuthMode(mode) {
+  const isLogin = mode === 'login';
+  $('#login-form')?.classList.toggle('role-hidden', !isLogin);
+  $('#register-form')?.classList.toggle('role-hidden', isLogin);
+  const title = $('#auth-screen-title');
+  if (title) title.textContent = isLogin ? 'Log In' : 'Create Account';
+  const subtitle = $('#auth-screen-subtitle');
+  if (subtitle) subtitle.textContent = isLogin
+    ? 'Sign in to continue to Care Navigation Navigator.'
+    : 'Register for a Patient or Payer account.';
+  const toggleBtn = $('#auth-toggle-mode');
+  if (toggleBtn) toggleBtn.textContent = isLogin ? 'New here? Create an account' : 'Already have an account? Log in';
+  const errorBox = $('#auth-error');
+  if (errorBox) { errorBox.textContent = ''; errorBox.classList.add('role-hidden'); }
+}
+
+function toggleAuthMode() {
+  const isLoginVisible = !$('#login-form')?.classList.contains('role-hidden');
+  setAuthMode(isLoginVisible ? 'register' : 'login');
+}
+
+function showAuthError(message) {
+  const errorBox = $('#auth-error');
+  if (!errorBox) return;
+  errorBox.textContent = message;
+  errorBox.classList.remove('role-hidden');
+}
+
+/**
+ * Enter the authenticated workspace for the given /api/auth/me user,
+ * mapping the backend's PATIENT/PAYER role onto the frontend's existing
+ * PATIENT/PAYER_ADMIN internal role labels.
+ */
+async function enterAuthenticatedWorkspace(user) {
+  state.currentUser = user;
+  showAppShell();
+  populateMemberSelectors();
+  await setRole(user.role === 'PAYER' ? 'PAYER_ADMIN' : 'PATIENT');
+}
+
+async function checkSession() {
+  try {
+    const user = await request('/api/auth/me');
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    // Unauthenticated (401) is the expected state for a fresh visit — show
+    // the login screen instead of an error.
+    showAuthScreen('login');
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const email = $('#login-email').value.trim();
+  const password = $('#login-password').value;
+  try {
+    const user = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  const email = $('#register-email').value.trim();
+  const password = $('#register-password').value;
+  try {
+    // Public self-registration only ever creates a PATIENT account; the
+    // backend rejects any other role outright (see backend/routes/auth.py).
+    await request('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, role: 'PATIENT' }),
+    });
+    const user = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+async function handleLogout() {
+  try {
+    await request('/api/auth/logout', { method: 'POST' });
+  } catch (error) {
+    console.error('Logout error:', error);
+  }
+  // Clear cached payer-only/session data so it can never leak into whatever
+  // session (or role) logs in next in this browser tab.
+  state.currentUser = null;
+  state.patients = [];
+  state.patientsLoaded = false;
+  state.analytics = null;
+  state.analyticsLoaded = false;
+  state.currentEncounter = null;
+  state.currentSessionId = null;
+  state.selectedMemberId = null;
+  showAuthScreen('login');
 }
 
 /**
@@ -117,9 +250,6 @@ function renderSidebarNav(role) {
 async function setRole(role) {
   state.activeRole = role;
 
-  const selector = $('#role-selector');
-  if (selector) selector.value = role;
-
   const workspaceTitle = $('#workspace-title');
 
   if (role === 'PATIENT') {
@@ -138,7 +268,9 @@ async function setRole(role) {
 
     $$('.payer-only').forEach(el => el.classList.remove('role-hidden'));
 
-    // Population data is only fetched once the Payer experience is actually opened
+    // Population data and analytics are only fetched once the Payer
+    // experience is actually opened, and only for an authenticated PAYER —
+    // never for a PATIENT session.
     if (!state.patientsLoaded) {
       try {
         state.patients = (await request('/api/patients')) || [];
@@ -146,6 +278,14 @@ async function setRole(role) {
         populateMemberSelectors();
       } catch (error) {
         console.error('Failed to load population data:', error);
+      }
+    }
+    if (!state.analyticsLoaded) {
+      try {
+        state.analytics = (await request('/api/analytics')) || null;
+        state.analyticsLoaded = true;
+      } catch (error) {
+        console.error('Failed to load analytics:', error);
       }
     }
   }
@@ -195,6 +335,90 @@ function route(name) {
       loadPatientHistory(state.selectedMemberId);
     }
   }
+  if (name === 'urgent-care-map') renderUrgentCareMap();
+}
+
+const formatDistance = meters => Number.isFinite(meters)
+  ? (meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`)
+  : 'Distance unavailable';
+const formatDuration = seconds => Number.isFinite(seconds)
+  ? `${Math.max(1, Math.round(seconds / 60))} min drive`
+  : 'Travel time unavailable';
+
+function urgentCareMapContent() {
+  const mapState = state.urgentCareMap;
+  if (mapState.status === 'requesting-location') return '<div class="card urgent-care-message"><div class="loading-spinner-wrap"><div class="spinner"></div><p>Requesting your location to find nearby urgent care…</p></div></div>';
+  if (mapState.status === 'location-denied') return '<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><div class="notice"><strong>Location access is needed to find nearby urgent care.</strong><p>Please allow location access, then try again.</p><button class="button primary" data-urgent-care-action="retry-location">Use My Location</button></div></div>';
+  if (mapState.status === 'error') return `<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><div class="notice emergency"><strong>Unable to load urgent care options.</strong><p>${escapeHtml(mapState.error || 'Please try again.')}</p><button class="button secondary" data-urgent-care-action="retry-location">Try Again</button></div></div>`;
+  if (!mapState.origin) return '<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><p class="subtitle">Find nearby urgent care based on your location.</p><button class="button primary" data-urgent-care-action="retry-location">Use My Location</button></div>';
+  const cards = mapState.facilities.length ? mapState.facilities.map(facility => {
+    const selected = mapState.selectedFacility?.id === facility.id;
+    const details = selected && mapState.route ? `<strong>${formatDistance(mapState.route.distanceMeters)}</strong> · ${formatDuration(mapState.route.durationSeconds)}` : `${formatDistance(facility.distanceMeters)} away (straight-line)`;
+    const rating = Number.isFinite(facility.rating) ? '<span title="Ratings should be verified with the provider">⭐⭐⭐⭐</span>' : '';
+    const phone = facility.phone ? `<span>Phone: ${escapeHtml(facility.phone)}</span>` : '';
+    const specialties = Array.isArray(facility.specialties) && facility.specialties.length ? `<span>Specialties: ${escapeHtml(facility.specialties.join(', '))}</span>` : '';
+    return `<button class="urgent-care-facility-card ${selected ? 'selected' : ''}" data-urgent-care-action="select-facility" data-facility-id="${escapeHtml(facility.id)}"><span class="facility-card-title">${escapeHtml(facility.name)}</span><span>${facility.type === 'hospital' ? 'Hospital' : 'Urgent care'}</span><span>${escapeHtml(facility.address || 'Address unavailable')}</span>${rating}${phone}${specialties}<span>${details}</span><span class="facility-availability">${facility.openingHours ? `Hours: ${escapeHtml(facility.openingHours)}` : 'Hours unavailable'}</span></button>`;
+  }).join('') : mapState.error
+    ? `<div class="notice"><strong>Facility search is temporarily unavailable.</strong><p>${escapeHtml(mapState.error)}</p><button class="button secondary" data-urgent-care-action="retry-location">Try Again</button></div>`
+    : '<div class="empty-state compact"><h3>No nearby care options found</h3><p>No urgent-care facilities or hospitals were found in available OpenStreetMap data.</p></div>';
+  const selected = mapState.selectedFacility;
+  const selection = selected ? `<div class="card selected-urgent-care"><p class="eyebrow">Selected urgent care</p><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.address || 'Address unavailable')}</p>${mapState.status === 'loading-route' ? '<p class="muted">Calculating your driving route…</p>' : ''}${mapState.error ? `<div class="notice emergency">${escapeHtml(mapState.error)}</div>` : ''}${mapState.route ? `<p><strong>Distance:</strong> ${formatDistance(mapState.route.distanceMeters)}<br /><strong>Estimated travel time:</strong> ${formatDuration(mapState.route.durationSeconds)}</p><a class="button primary" target="_blank" rel="noopener" href="https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${mapState.origin.latitude}%2C${mapState.origin.longitude}%3B${selected.latitude}%2C${selected.longitude}">Open Directions</a>` : ''}</div>` : '<div class="card selected-urgent-care"><p class="muted">Select an urgent-care facility to view a driving route and travel time.</p></div>';
+  return `<div class="page-header"><div><p class="eyebrow">Urgent Care</p><h1>Find nearby urgent care</h1><p class="subtitle">Location-based options for your existing urgent-care recommendation.</p></div><button class="button secondary" data-urgent-care-action="retry-location">Update Location</button></div><div class="urgent-care-layout"><div class="urgent-care-map-panel"><div id="urgent-care-leaflet-map" aria-label="Urgent care map"></div><p class="map-attribution-note">Map data © OpenStreetMap contributors</p></div><div class="urgent-care-list-panel"><h2>Nearby care options</h2>${mapState.status === 'loading-facilities' ? '<div class="loading-spinner-wrap"><div class="spinner"></div><p>Finding nearby care…</p></div>' : cards}</div></div>${selection}`;
+}
+
+function destroyUrgentCareMap() {
+  if (state.urgentCareMap.leafletMap) { state.urgentCareMap.leafletMap.remove(); state.urgentCareMap.leafletMap = null; }
+}
+
+function renderUrgentCareMap() {
+  const container = $('#urgent-care-map-content');
+  if (!container) return;
+  destroyUrgentCareMap(); container.innerHTML = urgentCareMapContent();
+  const element = $('#urgent-care-leaflet-map'); const origin = state.urgentCareMap.origin;
+  if (!element || !window.L || !origin) return;
+  const map = window.L.map(element).setView([origin.latitude, origin.longitude], 13);
+  state.urgentCareMap.leafletMap = map;
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+  const patient = window.L.circleMarker([origin.latitude, origin.longitude], { radius: 9, color: '#fff', weight: 3, fillColor: '#167f8a', fillOpacity: 1 }).addTo(map).bindPopup('Your location');
+  const bounds = window.L.latLngBounds([patient.getLatLng()]);
+  state.urgentCareMap.facilities.forEach(facility => {
+    const selected = state.urgentCareMap.selectedFacility?.id === facility.id;
+    const marker = window.L.circleMarker([facility.latitude, facility.longitude], { radius: selected ? 10 : 7, color: '#fff', weight: 2, fillColor: selected ? '#b45309' : '#123047', fillOpacity: 1 }).addTo(map).bindPopup(escapeHtml(facility.name));
+    marker.on('click', () => selectUrgentCareFacility(facility.id)); bounds.extend(marker.getLatLng());
+  });
+  if (state.urgentCareMap.route?.geometry) bounds.extend(window.L.geoJSON(state.urgentCareMap.route.geometry, { style: { color: '#167f8a', weight: 5 } }).addTo(map).getBounds());
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.18));
+}
+
+function requestBrowserLocation() {
+  if (!navigator.geolocation) { state.urgentCareMap.status = 'location-denied'; renderUrgentCareMap(); return; }
+  state.urgentCareMap.status = 'requesting-location'; renderUrgentCareMap();
+  navigator.geolocation.getCurrentPosition(
+    position => loadUrgentCareFacilities({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+    () => { state.urgentCareMap.status = 'location-denied'; renderUrgentCareMap(); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+function openUrgentCareMap() { if (state.currentEncounter?.recommendedAcuity === 'URGENT_CARE') { route('urgent-care-map'); requestBrowserLocation(); } }
+
+async function loadUrgentCareFacilities(origin) {
+  state.urgentCareMap = { ...state.urgentCareMap, origin, facilities: [], selectedFacility: null, route: null, status: 'loading-facilities', error: null }; renderUrgentCareMap();
+  try {
+    const result = await request(`/api/navigation/urgent-care/facilities?latitude=${encodeURIComponent(origin.latitude)}&longitude=${encodeURIComponent(origin.longitude)}&radiusMeters=5000`);
+    state.urgentCareMap = { ...state.urgentCareMap, origin: result.origin, facilities: result.facilities || [], status: 'loaded' };
+  } catch (error) { state.urgentCareMap = { ...state.urgentCareMap, status: 'loaded', error: error.message }; }
+  renderUrgentCareMap();
+}
+
+async function selectUrgentCareFacility(facilityId) {
+  const facility = state.urgentCareMap.facilities.find(item => item.id === facilityId); if (!facility || !state.urgentCareMap.origin) return;
+  state.urgentCareMap = { ...state.urgentCareMap, selectedFacility: facility, route: null, status: 'loading-route', error: null }; renderUrgentCareMap();
+  try {
+    const routeData = await request('/api/navigation/urgent-care/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: state.urgentCareMap.origin, destination: { latitude: facility.latitude, longitude: facility.longitude } }) });
+    state.urgentCareMap = { ...state.urgentCareMap, route: routeData, status: 'loaded' };
+  } catch (error) { state.urgentCareMap = { ...state.urgentCareMap, status: 'loaded', error: error.message }; }
+  renderUrgentCareMap();
 }
 
 /**
@@ -360,6 +584,7 @@ function renderNonEmergencyResult(data, container) {
       <div class="next-step-card">
         <h3 class="eyebrow">Next Step</h3>
         <p>Based on this assessment, <strong>${escapeHtml(data.recommendedSettingName)}</strong> is the appropriate care setting. Use Find Care Near You to locate options once location-based discovery is available, or contact your primary care provider directly.</p>
+        ${data.recommendedAcuity === 'URGENT_CARE' ? '<button class="button primary" data-urgent-care-action="open-map">Find Nearby Urgent Care</button>' : ''}
         <button class="button secondary" data-route="providers">Find Care Near You</button>
       </div>
     </div>
@@ -809,10 +1034,11 @@ async function submitChat(event) {
  * Bind DOM Event Handlers
  */
 function bindEvents() {
-  // Role Selector listener
-  $('#role-selector')?.addEventListener('change', e => {
-    setRole(e.target.value);
-  });
+  // Authentication listeners
+  $('#login-form')?.addEventListener('submit', handleLogin);
+  $('#register-form')?.addEventListener('submit', handleRegister);
+  $('#auth-toggle-mode')?.addEventListener('click', toggleAuthMode);
+  $('#logout-btn')?.addEventListener('click', handleLogout);
 
   // Navigation event delegation
   document.addEventListener('click', event => {
@@ -820,6 +1046,14 @@ function bindEvents() {
     if (routeBtn) {
       event.preventDefault();
       route(routeBtn.dataset.route);
+    }
+
+    const urgentCareAction = event.target.closest('[data-urgent-care-action]');
+    if (urgentCareAction) {
+      event.preventDefault();
+      if (urgentCareAction.dataset.urgentCareAction === 'open-map') openUrgentCareMap();
+      if (urgentCareAction.dataset.urgentCareAction === 'retry-location') requestBrowserLocation();
+      if (urgentCareAction.dataset.urgentCareAction === 'select-facility') selectUrgentCareFacility(urgentCareAction.dataset.facilityId);
     }
 
     if (event.target.closest('[data-close-panel]') || event.target === $('#panel-backdrop')) {
@@ -865,16 +1099,14 @@ async function init() {
     if ($('#self-patient-pref-setting')) $('#self-patient-pref-setting').value = state.patientProfile.prefSetting;
     if ($('#self-patient-comm')) $('#self-patient-comm').value = state.patientProfile.commPref;
 
-    // Load aggregate analytics only. The member-level population dataset is
-    // fetched lazily, only when the Payer experience is opened (see setRole),
-    // so it is never pulled into memory during a Patient session.
-    state.analytics = (await request('/api/analytics')) || null;
-
-    populateMemberSelectors();
     bindEvents();
 
-    // Default Role & View Initialization
-    await setRole('PATIENT');
+    // Session bootstrap: GET /api/auth/me determines whether to show the
+    // login/register screen or the workspace for the authenticated role.
+    // Population analytics and the member cohort are fetched lazily, only
+    // once an authenticated PAYER opens that experience (see setRole), so
+    // they are never pulled into memory during a Patient session.
+    await checkSession();
   } catch (error) {
     console.error('Initialization error:', error);
     document.querySelector('.main-content').innerHTML = `

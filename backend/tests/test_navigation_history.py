@@ -22,6 +22,7 @@ from backend.models import (
     Provider,
     TriageEncounter,
 )
+from backend.services.auth_service import register_user
 
 
 class NavigationHistoryTestCase(unittest.TestCase):
@@ -78,11 +79,13 @@ class NavigationHistoryTestCase(unittest.TestCase):
         self.db_session.commit()
 
     def _login_as_payer(self) -> None:
-        """Register+login a PAYER user. Caller must be inside a patch of
-        backend.services.auth_service.session_scope."""
-        self.client.post(
-            "/api/auth/register",
-            json={"email": "payer-navhist@example.com", "password": "password123", "role": "PAYER"},
+        """Provision+login a PAYER user. Caller must be inside a patch of
+        backend.services.auth_service.session_scope. PAYER is provisioned
+        directly via the service layer since POST /api/auth/register only
+        ever creates a PATIENT account."""
+        register_user(
+            email="payer-navhist@example.com", password="password123", role="PAYER",
+            session=self.db_session,
         )
         response = self.client.post(
             "/api/auth/login",

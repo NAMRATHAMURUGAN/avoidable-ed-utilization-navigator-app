@@ -6,8 +6,52 @@
     <meta name="theme-color" content="#123047" />
     <title>Care Navigation Navigator — Healthcare Decision Support</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
+    <!-- AUTH SCREEN: shown until GET /api/auth/me confirms a session; app-shell stays hidden until then -->
+    <div id="auth-screen">
+      <div class="card" style="max-width: 420px; margin: 64px auto;">
+        <div class="card-header">
+          <h2 id="auth-screen-title">Log In</h2>
+          <p id="auth-screen-subtitle" class="muted">Sign in to continue to Care Navigation Navigator.</p>
+        </div>
+
+        <div id="auth-error" class="notice emergency role-hidden"></div>
+
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input id="login-email" type="email" class="input-control" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" class="input-control" required autocomplete="current-password" />
+          </div>
+          <button type="submit" class="button primary full-width">Log In</button>
+        </form>
+
+        <form id="register-form" class="role-hidden">
+          <div class="form-group">
+            <label for="register-email">Email</label>
+            <input id="register-email" type="email" class="input-control" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="register-password">Password (min. 8 characters)</label>
+            <input id="register-password" type="password" class="input-control" required minlength="8" autocomplete="new-password" />
+          </div>
+          <p class="muted" style="font-size: 13px;">New accounts are registered as Patient / Member. Payer accounts are provisioned separately.</p>
+          <button type="submit" class="button primary full-width">Create Account</button>
+        </form>
+
+        <p class="muted" style="margin-top: 16px; text-align: center;">
+          <button type="button" id="auth-toggle-mode" class="text-button">New here? Create an account</button>
+        </p>
+      </div>
+    </div>
+
+    <!-- APPLICATION SHELL: hidden until an authenticated session is confirmed -->
+    <div id="app-shell" class="role-hidden">
     <!-- Emergency Warning Strip -->
     <div class="safety-strip" role="region" aria-label="Emergency warning">
       <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 3-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -31,13 +75,8 @@
       </div>
 
       <div class="topbar-right">
-        <div class="role-selector-wrap" title="Switch between the Patient and Payer experience">
-          <label for="role-selector" class="sr-only">Switch Experience</label>
-          <select id="role-selector" class="role-select-input" aria-label="Switch User Experience">
-            <option value="PATIENT" selected>Patient / Member Experience</option>
-            <option value="PAYER_ADMIN">Payer Experience</option>
-          </select>
-        </div>
+        <span id="current-user-email" class="muted" style="margin-right: 12px; font-size: 13px;"></span>
+        <button id="logout-btn" class="button secondary">Log Out</button>
       </div>
     </header>
 
@@ -259,6 +298,11 @@
           </div>
         </section>
 
+        <!-- URGENT CARE ONLY: live location, OSM facility discovery, and ORS routing -->
+        <section id="urgent-care-map-view" class="view">
+          <div id="urgent-care-map-content"></div>
+        </section>
+
         <!-- VIEW 4: CARE HISTORY VIEW -->
         <section id="history-view" class="view">
           <div class="page-header">
@@ -447,8 +491,10 @@
 
     <!-- Modal Backdrop -->
     <div id="panel-backdrop" class="backdrop"></div>
+    </div> <!-- /#app-shell -->
 
     <!-- Application Script Entry Point -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
