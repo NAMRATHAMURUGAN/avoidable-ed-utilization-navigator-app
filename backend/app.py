@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from flask import Flask, abort, send_from_directory
+from flask import Flask, abort, jsonify, send_from_directory
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import HTTPException
 
 from backend.config import get_security_settings
 from backend.routes.analytics import analytics_blueprint
@@ -57,6 +59,20 @@ def create_app() -> Flask:
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         return response
+
+    @app.errorhandler(HTTPException)
+    def json_http_error(error: HTTPException):
+        if error.code in {400, 404, 405, 415}:
+            return jsonify({"error": error.description}), error.code
+        return jsonify({"error": "Request could not be completed"}), error.code
+
+    @app.errorhandler(SQLAlchemyError)
+    def json_database_error(_error: SQLAlchemyError):
+        return jsonify({"error": "Database service is unavailable"}), 503
+
+    @app.errorhandler(RuntimeError)
+    def json_runtime_error(_error: RuntimeError):
+        return jsonify({"error": "Service configuration is unavailable"}), 503
 
     @app.get("/")
     def frontend_index():
