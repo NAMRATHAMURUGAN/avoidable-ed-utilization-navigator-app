@@ -1,7 +1,6 @@
 """Provider service abstraction layer.
 
 Queries provider directory from PostgreSQL via ProviderRepository.
-Seeds initial compatibility provider data if unseeded, explicitly marking records as demo data (`isDemo: True`).
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from backend.database import session_scope
 from backend.repositories.provider_repository import ProviderRepository
-from backend.services.mock_cms_data import MOCK_PROVIDERS
 
 
 def provider_model_to_dict(provider) -> dict[str, Any]:
@@ -43,7 +41,6 @@ def _execute_get_providers(
     max_distance: float | None = None,
 ) -> list[dict[str, Any]]:
     repo = ProviderRepository(session)
-    repo.seed_providers(MOCK_PROVIDERS)
     providers = repo.get_all(provider_type=provider_type, max_distance=max_distance)
     return [provider_model_to_dict(p) for p in providers]
 

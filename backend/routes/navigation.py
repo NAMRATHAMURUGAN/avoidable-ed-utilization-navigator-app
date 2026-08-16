@@ -1,4 +1,11 @@
-"""Public API routes for navigation actions and persistent interaction history."""
+"""API routes for navigation actions and persistent interaction history.
+
+GET /patients/<id>/history exposes a CMS member's full triage/navigation
+history and is PAYER-only. POST /navigation/action and the session-history
+lookup remain reachable anonymously (see inline notes) to preserve the
+existing anonymous patient navigation flow; only the member-linking branch
+of the action endpoint requires PAYER.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +14,12 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
+from backend.auth.decorators import role_required
 from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+<<<<<<< HEAD
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.services.navigation_service import CareNavigationService
 from backend.services.urgent_care_map_service import (
@@ -18,6 +27,9 @@ from backend.services.urgent_care_map_service import (
     calculate_urgent_care_route,
     discover_urgent_care_facilities,
 )
+=======
+from backend.services.auth_service import get_current_user
+>>>>>>> origin/main
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
 
@@ -130,12 +142,20 @@ def record_navigation_action():
     patient_id_raw = data.get("patientId") or data.get("member_id")
     member_id: int | None = None
 
+    # Attaching an action directly to an arbitrary CMS member requires an
+    # authenticated PAYER caller; there is no User<->Member mapping to
+    # authorize this for an unauthenticated or PATIENT caller. This does not
+    # affect inheriting member_id from an already-linked encounter below,
+    # since that link can only exist if a PAYER established it during triage.
+    current_user = get_current_user()
+    is_payer = current_user is not None and current_user.role == "PAYER"
+
     now = datetime.now(timezone.utc)
     action_id: int | None = None
 
     with session_scope() as session:
         # Resolve member_id if patientId string/bene_id is passed
-        if patient_id_raw is not None:
+        if patient_id_raw is not None and is_payer:
             m_repo = MemberRepository(session)
             member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
             if member_res is not None:
@@ -172,6 +192,7 @@ def record_navigation_action():
 
 
 @navigation_blueprint.get("/patients/<patient_id>/history", strict_slashes=False)
+@role_required("PAYER")
 def get_patient_history(patient_id: str):
     """GET /api/patients/<id>/history - Return persistent interaction and triage history."""
     with session_scope() as session:
