@@ -19,7 +19,6 @@ from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
-<<<<<<< HEAD
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.services.navigation_service import CareNavigationService
 from backend.services.urgent_care_map_service import (
@@ -27,9 +26,7 @@ from backend.services.urgent_care_map_service import (
     calculate_urgent_care_route,
     discover_urgent_care_facilities,
 )
-=======
 from backend.services.auth_service import get_current_user
->>>>>>> origin/main
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
 
