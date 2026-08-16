@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#123047" />
     <title>Care Navigation Navigator — Healthcare Decision Support</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
     <!-- Emergency Warning Strip -->
@@ -259,6 +260,11 @@
           </div>
         </section>
 
+        <!-- URGENT CARE ONLY: live location, OSM facility discovery, and ORS routing -->
+        <section id="urgent-care-map-view" class="view">
+          <div id="urgent-care-map-content"></div>
+        </section>
+
         <!-- VIEW 4: CARE HISTORY VIEW -->
         <section id="history-view" class="view">
           <div class="page-header">
@@ -449,6 +455,7 @@
     <div id="panel-backdrop" class="backdrop"></div>
 
     <!-- Application Script Entry Point -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

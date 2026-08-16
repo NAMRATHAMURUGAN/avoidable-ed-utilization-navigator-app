@@ -13,8 +13,50 @@ from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.services.navigation_service import CareNavigationService
+from backend.services.urgent_care_map_service import (
+    UrgentCareMapError,
+    calculate_urgent_care_route,
+    discover_urgent_care_facilities,
+)
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
+
+
+@navigation_blueprint.get("/navigation/urgent-care/facilities", strict_slashes=False)
+def get_urgent_care_facilities():
+    """Return live OSM facilities explicitly identified as urgent care."""
+    try:
+        response = discover_urgent_care_facilities(
+            request.args.get("latitude"),
+            request.args.get("longitude"),
+            request.args.get("radiusMeters"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except UrgentCareMapError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    return jsonify(response)
+
+
+@navigation_blueprint.post("/navigation/urgent-care/route", strict_slashes=False)
+def get_urgent_care_route():
+    """Return a live ORS driving route for a selected urgent-care facility."""
+    if request.content_length and not request.is_json:
+        return jsonify({"error": "Content-Type must be application/json"}), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Missing JSON request payload"}), 400
+    origin = data.get("origin")
+    destination = data.get("destination")
+    if not isinstance(origin, dict) or not isinstance(destination, dict):
+        return jsonify({"error": "origin and destination are required"}), 400
+    try:
+        response = calculate_urgent_care_route(origin, destination)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except UrgentCareMapError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+    return jsonify(response)
 
 
 @navigation_blueprint.get("/navigation/members/<member_id>/recommendations", strict_slashes=False)

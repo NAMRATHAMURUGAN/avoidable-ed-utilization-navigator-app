@@ -1300,7 +1300,45 @@ textarea.input-control {
   100% { background-position: -200% 0; }
 }
 
-/* 14. RESPONSIVE BREAKPOINTS */
+/* 14. URGENT CARE MAP */
+.urgent-care-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.urgent-care-map-panel,
+.urgent-care-list-panel,
+.selected-urgent-care,
+.urgent-care-message {
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.urgent-care-map-panel { overflow: hidden; }
+#urgent-care-leaflet-map { height: 480px; width: 100%; background: #e7f0f3; }
+.map-attribution-note { margin: 8px 12px; color: var(--muted); font-size: 12px; }
+.urgent-care-list-panel { padding: 18px; max-height: 520px; overflow: auto; }
+.urgent-care-list-panel h2 { font-size: 18px; margin: 0 0 12px; }
+.urgent-care-facility-card {
+  width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--paper, #fff);
+  padding: 14px; margin: 0 0 10px; color: var(--ink); cursor: pointer;
+}
+.urgent-care-facility-card:hover,
+.urgent-care-facility-card:focus-visible { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(22, 127, 138, .14); outline: none; }
+.urgent-care-facility-card.selected { border-color: #b45309; background: #fffaf0; }
+.facility-card-title { font-weight: 700; color: var(--navy); }
+.facility-availability { color: var(--muted); font-size: 13px; }
+.selected-urgent-care { padding: 20px; max-width: 680px; }
+.selected-urgent-care h2 { margin: 4px 0; }
+.urgent-care-message { max-width: 680px; padding: 24px; }
+.empty-state.compact { padding: 22px 8px; }
+
+/* 15. RESPONSIVE BREAKPOINTS */
 .mobile-only {
   display: none;
 }
@@ -1315,6 +1353,8 @@ textarea.input-control {
   .provider-grid-container {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .urgent-care-layout { grid-template-columns: 1fr; }
+  #urgent-care-leaflet-map { height: 380px; }
   .stat-grid-container {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

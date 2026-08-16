@@ -13,6 +13,10 @@ const state = {
   currentEncounter: null,
   currentSessionId: null,
   selectedMemberId: null,
+  urgentCareMap: {
+    origin: null, facilities: [], selectedFacility: null, route: null,
+    status: 'idle', error: null, leafletMap: null,
+  },
   patientProfile: {
     name: 'Jane Doe',
     age: 42,
@@ -195,6 +199,85 @@ function route(name) {
       loadPatientHistory(state.selectedMemberId);
     }
   }
+  if (name === 'urgent-care-map') renderUrgentCareMap();
+}
+
+const formatDistance = meters => Number.isFinite(meters)
+  ? (meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`)
+  : 'Distance unavailable';
+const formatDuration = seconds => Number.isFinite(seconds)
+  ? `${Math.max(1, Math.round(seconds / 60))} min drive`
+  : 'Travel time unavailable';
+
+function urgentCareMapContent() {
+  const mapState = state.urgentCareMap;
+  if (mapState.status === 'requesting-location') return '<div class="card urgent-care-message"><div class="loading-spinner-wrap"><div class="spinner"></div><p>Requesting your location to find nearby urgent care…</p></div></div>';
+  if (mapState.status === 'location-denied') return '<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><div class="notice"><strong>Location access is needed to find nearby urgent care.</strong><p>Please allow location access, then try again.</p><button class="button primary" data-urgent-care-action="retry-location">Use My Location</button></div></div>';
+  if (mapState.status === 'error') return `<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><div class="notice emergency"><strong>Unable to load urgent care options.</strong><p>${escapeHtml(mapState.error || 'Please try again.')}</p><button class="button secondary" data-urgent-care-action="retry-location">Try Again</button></div></div>`;
+  if (!mapState.origin) return '<div class="card urgent-care-message"><h1>Urgent Care Navigation</h1><p class="subtitle">Find nearby urgent care based on your location.</p><button class="button primary" data-urgent-care-action="retry-location">Use My Location</button></div>';
+  const cards = mapState.facilities.length ? mapState.facilities.map(facility => {
+    const selected = mapState.selectedFacility?.id === facility.id;
+    const details = selected && mapState.route ? `<strong>${formatDistance(mapState.route.distanceMeters)}</strong> · ${formatDuration(mapState.route.durationSeconds)}` : `${formatDistance(facility.distanceMeters)} away (straight-line)`;
+    return `<button class="urgent-care-facility-card ${selected ? 'selected' : ''}" data-urgent-care-action="select-facility" data-facility-id="${escapeHtml(facility.id)}"><span class="facility-card-title">${escapeHtml(facility.name)}</span><span>${escapeHtml(facility.address || 'Address unavailable')}</span><span>${details}</span><span class="facility-availability">${facility.openingHours ? `Hours: ${escapeHtml(facility.openingHours)}` : 'Hours unavailable'}</span></button>`;
+  }).join('') : '<div class="empty-state compact"><h3>No nearby urgent care found</h3><p>No facilities explicitly identified as urgent care were found in available OpenStreetMap data.</p></div>';
+  const selected = mapState.selectedFacility;
+  const selection = selected ? `<div class="card selected-urgent-care"><p class="eyebrow">Selected urgent care</p><h2>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.address || 'Address unavailable')}</p>${mapState.status === 'loading-route' ? '<p class="muted">Calculating your driving route…</p>' : ''}${mapState.error ? `<div class="notice emergency">${escapeHtml(mapState.error)}</div>` : ''}${mapState.route ? `<p><strong>Distance:</strong> ${formatDistance(mapState.route.distanceMeters)}<br /><strong>Estimated travel time:</strong> ${formatDuration(mapState.route.durationSeconds)}</p><a class="button primary" target="_blank" rel="noopener" href="https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${mapState.origin.latitude}%2C${mapState.origin.longitude}%3B${selected.latitude}%2C${selected.longitude}">Open Directions</a>` : ''}</div>` : '<div class="card selected-urgent-care"><p class="muted">Select an urgent-care facility to view a driving route and travel time.</p></div>';
+  return `<div class="page-header"><div><p class="eyebrow">Urgent Care</p><h1>Find nearby urgent care</h1><p class="subtitle">Location-based options for your existing urgent-care recommendation.</p></div><button class="button secondary" data-urgent-care-action="retry-location">Update Location</button></div><div class="urgent-care-layout"><div class="urgent-care-map-panel"><div id="urgent-care-leaflet-map" aria-label="Urgent care map"></div><p class="map-attribution-note">Map data © OpenStreetMap contributors</p></div><div class="urgent-care-list-panel"><h2>Nearby urgent care</h2>${mapState.status === 'loading-facilities' ? '<div class="loading-spinner-wrap"><div class="spinner"></div><p>Finding nearby urgent care…</p></div>' : cards}</div></div>${selection}`;
+}
+
+function destroyUrgentCareMap() {
+  if (state.urgentCareMap.leafletMap) { state.urgentCareMap.leafletMap.remove(); state.urgentCareMap.leafletMap = null; }
+}
+
+function renderUrgentCareMap() {
+  const container = $('#urgent-care-map-content');
+  if (!container) return;
+  destroyUrgentCareMap(); container.innerHTML = urgentCareMapContent();
+  const element = $('#urgent-care-leaflet-map'); const origin = state.urgentCareMap.origin;
+  if (!element || !window.L || !origin) return;
+  const map = window.L.map(element).setView([origin.latitude, origin.longitude], 13);
+  state.urgentCareMap.leafletMap = map;
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+  const patient = window.L.circleMarker([origin.latitude, origin.longitude], { radius: 9, color: '#fff', weight: 3, fillColor: '#167f8a', fillOpacity: 1 }).addTo(map).bindPopup('Your location');
+  const bounds = window.L.latLngBounds([patient.getLatLng()]);
+  state.urgentCareMap.facilities.forEach(facility => {
+    const selected = state.urgentCareMap.selectedFacility?.id === facility.id;
+    const marker = window.L.circleMarker([facility.latitude, facility.longitude], { radius: selected ? 10 : 7, color: '#fff', weight: 2, fillColor: selected ? '#b45309' : '#123047', fillOpacity: 1 }).addTo(map).bindPopup(escapeHtml(facility.name));
+    marker.on('click', () => selectUrgentCareFacility(facility.id)); bounds.extend(marker.getLatLng());
+  });
+  if (state.urgentCareMap.route?.geometry) bounds.extend(window.L.geoJSON(state.urgentCareMap.route.geometry, { style: { color: '#167f8a', weight: 5 } }).addTo(map).getBounds());
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.18));
+}
+
+function requestBrowserLocation() {
+  if (!navigator.geolocation) { state.urgentCareMap.status = 'location-denied'; renderUrgentCareMap(); return; }
+  state.urgentCareMap.status = 'requesting-location'; renderUrgentCareMap();
+  navigator.geolocation.getCurrentPosition(
+    position => loadUrgentCareFacilities({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+    () => { state.urgentCareMap.status = 'location-denied'; renderUrgentCareMap(); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
+function openUrgentCareMap() { if (state.currentEncounter?.recommendedAcuity === 'URGENT_CARE') { route('urgent-care-map'); requestBrowserLocation(); } }
+
+async function loadUrgentCareFacilities(origin) {
+  state.urgentCareMap = { ...state.urgentCareMap, origin, facilities: [], selectedFacility: null, route: null, status: 'loading-facilities', error: null }; renderUrgentCareMap();
+  try {
+    const result = await request(`/api/navigation/urgent-care/facilities?latitude=${encodeURIComponent(origin.latitude)}&longitude=${encodeURIComponent(origin.longitude)}&radiusMeters=5000`);
+    state.urgentCareMap = { ...state.urgentCareMap, origin: result.origin, facilities: result.facilities || [], status: 'loaded' };
+  } catch (error) { state.urgentCareMap = { ...state.urgentCareMap, status: 'error', error: error.message }; }
+  renderUrgentCareMap();
+}
+
+async function selectUrgentCareFacility(facilityId) {
+  const facility = state.urgentCareMap.facilities.find(item => item.id === facilityId); if (!facility || !state.urgentCareMap.origin) return;
+  state.urgentCareMap = { ...state.urgentCareMap, selectedFacility: facility, route: null, status: 'loading-route', error: null }; renderUrgentCareMap();
+  try {
+    const routeData = await request('/api/navigation/urgent-care/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: state.urgentCareMap.origin, destination: { latitude: facility.latitude, longitude: facility.longitude } }) });
+    state.urgentCareMap = { ...state.urgentCareMap, route: routeData, status: 'loaded' };
+  } catch (error) { state.urgentCareMap = { ...state.urgentCareMap, status: 'loaded', error: error.message }; }
+  renderUrgentCareMap();
 }
 
 /**
@@ -360,6 +443,7 @@ function renderNonEmergencyResult(data, container) {
       <div class="next-step-card">
         <h3 class="eyebrow">Next Step</h3>
         <p>Based on this assessment, <strong>${escapeHtml(data.recommendedSettingName)}</strong> is the appropriate care setting. Use Find Care Near You to locate options once location-based discovery is available, or contact your primary care provider directly.</p>
+        ${data.recommendedAcuity === 'URGENT_CARE' ? '<button class="button primary" data-urgent-care-action="open-map">Find Nearby Urgent Care</button>' : ''}
         <button class="button secondary" data-route="providers">Find Care Near You</button>
       </div>
     </div>
@@ -820,6 +904,14 @@ function bindEvents() {
     if (routeBtn) {
       event.preventDefault();
       route(routeBtn.dataset.route);
+    }
+
+    const urgentCareAction = event.target.closest('[data-urgent-care-action]');
+    if (urgentCareAction) {
+      event.preventDefault();
+      if (urgentCareAction.dataset.urgentCareAction === 'open-map') openUrgentCareMap();
+      if (urgentCareAction.dataset.urgentCareAction === 'retry-location') requestBrowserLocation();
+      if (urgentCareAction.dataset.urgentCareAction === 'select-facility') selectUrgentCareFacility(urgentCareAction.dataset.facilityId);
     }
 
     if (event.target.closest('[data-close-panel]') || event.target === $('#panel-backdrop')) {
