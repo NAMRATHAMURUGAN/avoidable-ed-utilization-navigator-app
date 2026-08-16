@@ -60,6 +60,19 @@ class NavigationHistoryTestCase(unittest.TestCase):
         self.db_session.add(m)
         self.db_session.commit()
 
+    def _login_as_payer(self) -> None:
+        """Register+login a PAYER user. Caller must be inside a patch of
+        backend.services.auth_service.session_scope."""
+        self.client.post(
+            "/api/auth/register",
+            json={"email": "payer-navhist@example.com", "password": "password123", "role": "PAYER"},
+        )
+        response = self.client.post(
+            "/api/auth/login",
+            json={"email": "payer-navhist@example.com", "password": "password123"},
+        )
+        assert response.status_code == 200, response.get_json()
+
     def test_emergency_triage_hard_safety_boundary(self) -> None:
         with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
             payload = {
@@ -120,7 +133,9 @@ class NavigationHistoryTestCase(unittest.TestCase):
             self.assertEqual(data["recommendedAcuity"], "TELEHEALTH")
 
     def test_member_linked_encounter_persistence(self) -> None:
-        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             payload = {
                 "patientId": "1001",
                 "chiefComplaint": "Minor ankle sprain",
@@ -135,7 +150,9 @@ class NavigationHistoryTestCase(unittest.TestCase):
 
     def test_record_navigation_action_and_history(self) -> None:
         with patch("backend.routes.navigation.session_scope", self._mock_session_scope), \
-             patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+             patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
 
             # Create an encounter
             enc = TriageEncounter(
@@ -180,7 +197,9 @@ class NavigationHistoryTestCase(unittest.TestCase):
             self.assertEqual(hist_data["actions"][0]["selectedProviderId"], "prov-02")
 
     def test_member_linked_by_bene_id(self) -> None:
-        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             payload = {
                 "patientId": "CMS-TEST-1001",
                 "chiefComplaint": "Minor ankle sprain",

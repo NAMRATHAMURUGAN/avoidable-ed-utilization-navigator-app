@@ -21,6 +21,7 @@ from backend.models import (
     Member,
     MemberUtilizationSnapshot,
     ModelRun,
+    Provider,
     UtilizationAnomalyResult,
     XGBoostUtilizationPrediction,
 )
@@ -62,6 +63,19 @@ class ApiEndpointsTestCase(unittest.TestCase):
     @contextmanager
     def _mock_session_scope(self):
         yield self.db_session
+
+    def _login_as_payer(self) -> None:
+        """Register+login a PAYER user. Caller must be inside a patch of
+        backend.services.auth_service.session_scope."""
+        self.client.post(
+            "/api/auth/register",
+            json={"email": "payer-fixture@example.com", "password": "password123", "role": "PAYER"},
+        )
+        response = self.client.post(
+            "/api/auth/login",
+            json={"email": "payer-fixture@example.com", "password": "password123"},
+        )
+        assert response.status_code == 200, response.get_json()
 
     def _seed_database(self) -> None:
         xgb_run = ModelRun(
@@ -192,6 +206,26 @@ class ApiEndpointsTestCase(unittest.TestCase):
         )
         self.db_session.add(m3)
 
+        provider = Provider(
+            id="provider-urgent-care-1",
+            name="SQLite Urgent Care",
+            type="URGENT_CARE",
+            address="1 Test Street",
+            city_state_zip="Testville, TS 00000",
+            distance_miles=1.5,
+            is_open_247=False,
+            operating_hours="8 AM - 8 PM",
+            current_wait_time_mins=15,
+            copay_amount=25.0,
+            average_total_cost=180.0,
+            phone="555-0100",
+            telehealth_url=None,
+            accepts_medicare=True,
+            services=["Urgent Care"],
+            is_demo=False,
+        )
+        self.db_session.add(provider)
+
         self.db_session.commit()
 
     def test_member_repository_bulk_query_no_member_loss(self) -> None:
@@ -235,8 +269,28 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertEqual(missing_res["riskLevel"], "LOW")
         self.assertEqual(missing_res["edVisitCount12m"], 0)
 
+    def test_risk_level_interpretation_is_non_clinical(self) -> None:
+        m = Member(id=98, bene_id="TEST-INTERP", age=60, gender="F", dual_eligibility_months=0, chronic_condition_count=0)
+        xgb = XGBoostUtilizationPrediction(high_utilization_probability=0.9)
+        anom = UtilizationAnomalyResult(anomaly_flag=1)
+        snap = MemberUtilizationSnapshot(ed_visit_count=5, total_ed_related_cost=Decimal("0"))
+        result = member_analytical_result_to_dict(MemberAnalyticalResult(m, snap, xgb, anom))
+
+        self.assertEqual(result["riskLevel"], "HIGH")
+        self.assertIn("riskLevelInterpretation", result)
+        interpretation = result["riskLevelInterpretation"].lower()
+        self.assertIn("historical high-utilization-pattern", interpretation)
+        self.assertIn("utilization-anomaly", interpretation)
+        self.assertIn("not a medical necessity determination", interpretation)
+        self.assertIn("emergency necessity determination", interpretation)
+        self.assertIn("clinical deterioration", interpretation)
+        self.assertIn("inappropriate ed use", interpretation)
+        self.assertIn("ed avoidability", interpretation)
+
     def test_get_patients_returns_all_from_database(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -244,11 +298,15 @@ class ApiEndpointsTestCase(unittest.TestCase):
             self.assertEqual(len(data), 3, "All 3 members must be visible in API response.")
             self.assertEqual(data[0]["beneficiaryId"], "CMS-A894-201")
             self.assertEqual(data[0]["riskLevel"], "HIGH")
+            self.assertIn("riskLevelInterpretation", data[0])
+            self.assertIn("not a medical necessity determination", data[0]["riskLevelInterpretation"])
             self.assertEqual(data[2]["beneficiaryId"], "CMS-C902-114")
             self.assertEqual(data[2]["riskLevel"], "LOW")
 
     def test_get_patient_by_id_found(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients/1")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -260,14 +318,18 @@ class ApiEndpointsTestCase(unittest.TestCase):
             self.assertEqual(data_bene["beneficiaryId"], "CMS-B412-990")
 
     def test_get_patient_by_id_not_found(self) -> None:
-        with patch("backend.services.patient_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.patient_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/patients/nonexistent-id")
             self.assertEqual(response.status_code, 404)
             data = response.get_json()
             self.assertEqual(data, {"error": "Patient not found"})
 
     def test_get_analytics_returns_database_aggregations(self) -> None:
-        with patch("backend.services.analytics_service.session_scope", self._mock_session_scope):
+        with patch("backend.services.analytics_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
             response = self.client.get("/api/analytics")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -285,7 +347,8 @@ class ApiEndpointsTestCase(unittest.TestCase):
             "selectedRedFlags": [],
             "hasRedFlags": False,
         }
-        response = self.client.post("/api/triage", json=payload)
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            response = self.client.post("/api/triage", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertFalse(data["isEmergencyRedFlag"])
@@ -301,7 +364,8 @@ class ApiEndpointsTestCase(unittest.TestCase):
             "selectedRedFlags": [],
             "hasRedFlags": True,
         }
-        response = self.client.post("/api/triage", json=payload)
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            response = self.client.post("/api/triage", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertTrue(data["isEmergencyRedFlag"])
@@ -309,12 +373,151 @@ class ApiEndpointsTestCase(unittest.TestCase):
         self.assertEqual(data["urgencyLevel"], "IMMEDIATE_911_ER")
         self.assertEqual(len(data["suitableProviders"]), 0)
 
+    def test_triage_uses_latest_xgboost_and_anomaly_model_run(self) -> None:
+        """Prove /api/triage links a member's XGBoost prediction and Isolation Forest
+        anomaly via the explicitly resolved *latest* model run, not by falling back to
+        whichever row happens to have the highest database row ID.
+
+        A stale model run's prediction/anomaly rows are given lower row IDs than the
+        latest model run's rows (by inserting the latest rows first). A naive
+        "order by row ID descending, ignore model_run_id" lookup would therefore
+        return the stale (higher-ID) rows here; only explicit model_run_id scoping
+        via ModelRunRepository.get_latest(...) returns the correct latest values.
+        """
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._login_as_payer()
+            member = Member(
+                id=501,
+                bene_id="CMS-SCOPE-501",
+                age=59,
+                gender="Female",
+                dual_eligibility_months=0,
+                chronic_condition_count=1,
+            )
+            self.db_session.add(member)
+            self.db_session.flush()
+
+            snapshot = MemberUtilizationSnapshot(
+                id=501,
+                member_id=member.id,
+                inpatient_visit_count=0,
+                inpatient_total_cost=Decimal("0.00"),
+                outpatient_visit_count=1,
+                outpatient_total_cost=Decimal("100.00"),
+                ed_visit_count=1,
+                total_claim_payment_amount=Decimal("100.00"),
+                total_ed_related_cost=Decimal("50.00"),
+                average_claim_cost=Decimal("100.00"),
+                provider_count=1,
+            )
+            self.db_session.add(snapshot)
+            self.db_session.flush()
+
+            stale_xgb_run = ModelRun(
+                model_run_id=101,
+                model_type="xgboost",
+                purpose="utilization prediction",
+                artifact_reference="ml_models/xgboost_risk_model_stale_test.pkl",
+                generated_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            )
+            latest_xgb_run = ModelRun(
+                model_run_id=102,
+                model_type="xgboost",
+                purpose="utilization prediction",
+                artifact_reference="ml_models/xgboost_risk_model_latest_test.pkl",
+                generated_at=datetime(2025, 6, 1, tzinfo=timezone.utc),
+            )
+            stale_anomaly_run = ModelRun(
+                model_run_id=103,
+                model_type="isolation_forest",
+                purpose="utilization anomaly",
+                artifact_reference="ml_models/isolation_forest_stale_test.pkl",
+                generated_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            )
+            latest_anomaly_run = ModelRun(
+                model_run_id=104,
+                model_type="isolation_forest",
+                purpose="utilization anomaly",
+                artifact_reference="ml_models/isolation_forest_latest_test.pkl",
+                generated_at=datetime(2025, 6, 1, tzinfo=timezone.utc),
+            )
+            self.db_session.add_all(
+                [stale_xgb_run, latest_xgb_run, stale_anomaly_run, latest_anomaly_run]
+            )
+            self.db_session.flush()
+
+            # Insert the LATEST run's rows first (lower row IDs) and the STALE run's
+            # rows second (higher row IDs) so a row-ID fallback would pick the wrong one.
+            latest_prediction = XGBoostUtilizationPrediction(
+                id=501,
+                member_id=member.id,
+                utilization_snapshot_id=snapshot.id,
+                model_run_id=latest_xgb_run.model_run_id,
+                high_utilization_pattern=0,
+                predicted_high_utilization_pattern=0,
+                high_utilization_probability=0.20,
+                dataset_split="test",
+            )
+            stale_prediction = XGBoostUtilizationPrediction(
+                id=502,
+                member_id=member.id,
+                utilization_snapshot_id=snapshot.id,
+                model_run_id=stale_xgb_run.model_run_id,
+                high_utilization_pattern=1,
+                predicted_high_utilization_pattern=1,
+                high_utilization_probability=0.95,
+                dataset_split="test",
+            )
+            latest_anomaly = UtilizationAnomalyResult(
+                id=501,
+                member_id=member.id,
+                utilization_snapshot_id=snapshot.id,
+                model_run_id=latest_anomaly_run.model_run_id,
+                anomaly_score=-0.10,
+                anomaly_flag=0,
+                anomaly_rank=99,
+                generated_at=datetime.now(timezone.utc),
+            )
+            stale_anomaly = UtilizationAnomalyResult(
+                id=502,
+                member_id=member.id,
+                utilization_snapshot_id=snapshot.id,
+                model_run_id=stale_anomaly_run.model_run_id,
+                anomaly_score=0.80,
+                anomaly_flag=1,
+                anomaly_rank=1,
+                generated_at=datetime.now(timezone.utc),
+            )
+            self.db_session.add_all(
+                [latest_prediction, stale_prediction, latest_anomaly, stale_anomaly]
+            )
+            self.db_session.commit()
+
+            payload = {
+                "patientId": "501",
+                "chiefComplaint": "Annual checkup and medication review",
+            }
+            response = self.client.post("/api/triage", json=payload)
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+
+            self.assertIsNotNone(data.get("patientContext"))
+            # Must reflect the LATEST model run (0.20 probability, no anomaly flag),
+            # not the stale run (0.95 probability, anomaly flag set) that a row-ID
+            # fallback lookup would incorrectly return.
+            self.assertAlmostEqual(data["patientContext"]["highUtilizationProbability"], 0.20)
+            self.assertFalse(data["patientContext"]["anomalyFlag"])
+            self.assertEqual(data["patientContext"]["riskLevel"], "LOW")
+            self.assertIn("riskLevelInterpretation", data["patientContext"])
+
     def test_post_triage_malformed_input_handling(self) -> None:
         response = self.client.post("/api/triage", data="invalid json string", content_type="text/plain")
         self.assertEqual(response.status_code, 400)
         data = response.get_json()
         self.assertEqual(data, {"error": "Content-Type must be application/json"})
 
+<<<<<<< HEAD
         # Empty JSON object is invalid; a clinical recommendation cannot be inferred.
         empty_res = self.client.post("/api/triage", json={})
         self.assertEqual(empty_res.status_code, 400)
@@ -357,13 +560,24 @@ class ApiEndpointsTestCase(unittest.TestCase):
                 response = self.client.post("/api/triage", json=payload)
                 self.assertEqual(response.status_code, 400)
                 self.assertIsInstance(response.get_json(), dict)
+=======
+        # Empty JSON object should process safely without crashing
+        with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
+            empty_res = self.client.post("/api/triage", json={})
+        self.assertEqual(empty_res.status_code, 200)
+        empty_data = empty_res.get_json()
+        self.assertFalse(empty_data["isEmergencyRedFlag"])
+>>>>>>> origin/main
 
-    def test_get_providers_returns_compatibility_providers(self) -> None:
-        response = self.client.get("/api/providers")
+    def test_get_providers_returns_database_providers(self) -> None:
+        with patch("backend.services.provider_service.session_scope", self._mock_session_scope):
+            response = self.client.get("/api/providers")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 5)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["id"], "provider-urgent-care-1")
+        self.assertFalse(data[0]["isDemo"])
 
     def test_provider_query_validation(self) -> None:
         for query in ("?maxDistance=bad", "?maxDistance=-1", "?maxDistance=nan", "?maxDistance=501", "?type=HOSPITAL"):

@@ -18,12 +18,14 @@ from backend.database import session_scope
 from backend.models.encounter import TriageEncounter
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
+from backend.repositories.model_run_repository import ModelRunRepository
 from backend.safety.engine import evaluate_safety
 from backend.services import provider_service
 from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
 
 
+<<<<<<< HEAD
 MAX_CHIEF_COMPLAINT_LENGTH = 1_000
 MAX_SYMPTOM_DURATION_LENGTH = 128
 MAX_LIST_ITEM_LENGTH = 256
@@ -93,6 +95,11 @@ def validate_triage_request(data: Any) -> dict[str, Any]:
 
 
 def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str, Any]:
+=======
+def _execute_triage_request(
+    session: Session, data: dict[str, Any], *, allow_member_linkage: bool
+) -> dict[str, Any]:
+>>>>>>> origin/main
     chief_complaint = str(data.get("chiefComplaint", "") or "").strip()
     symptoms_duration = str(data.get("symptomsDuration", "") or "").strip()
 
@@ -118,8 +125,14 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
     patient_context: dict[str, Any] | None = None
     proactive_rec: dict[str, Any] | None = None
 
-    if patient_id_raw is not None:
+    # Member-linked ML enrichment (patientContext / proactiveRecommendation)
+    # is only ever resolved for an authenticated PAYER caller. There is no
+    # User<->Member mapping, so an unauthenticated or PATIENT caller
+    # supplying a patientId is treated identically to anonymous triage: the
+    # safety-engine screening below is entirely unaffected either way.
+    if patient_id_raw is not None and allow_member_linkage:
         m_repo = MemberRepository(session)
+<<<<<<< HEAD
         member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
         if member_res is None:
             raise TriageMemberNotFoundError("Patient not found")
@@ -150,6 +163,48 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
             ml_data={"predicted_probability": xgb_prob},
             anomaly_data={"anomaly_flag": anomaly_flag},
         )
+=======
+        run_repo = ModelRunRepository(session)
+        # Explicitly resolve the latest model run for each model type, mirroring
+        # patient_service.py, so the linked prediction/anomaly always reflect the
+        # current model run rather than falling back to row-insertion order.
+        xgb_run = run_repo.get_latest("xgboost")
+        anomaly_run = run_repo.get_latest("isolation_forest")
+        member_res = m_repo.get_combined_result_by_id_or_bene(
+            str(patient_id_raw),
+            xgb_model_run_id=xgb_run.model_run_id if xgb_run else None,
+            anomaly_model_run_id=anomaly_run.model_run_id if anomaly_run else None,
+        )
+        if member_res is not None:
+            member_id = member_res.member.id
+            anal_dict = member_analytical_result_to_dict(member_res)
+            xgb_prob = (
+                member_res.xgboost_prediction.high_utilization_probability
+                if member_res.xgboost_prediction
+                else None
+            )
+            anomaly_flag = (
+                bool(member_res.anomaly_result.anomaly_flag)
+                if member_res.anomaly_result
+                else False
+            )
+            patient_context = {
+                "patientId": str(member_res.member.id),
+                "beneficiaryId": member_res.member.bene_id,
+                "riskLevel": anal_dict["riskLevel"],
+                "riskLevelInterpretation": anal_dict["riskLevelInterpretation"],
+                "highUtilizationProbability": xgb_prob,
+                "anomalyFlag": anomaly_flag,
+                "edVisitCount12m": anal_dict["edVisitCount12m"],
+            }
+            nav_service = CareNavigationService()
+            proactive_rec = nav_service.generate_recommendation(
+                member_data={"bene_id": member_res.member.bene_id},
+                utilization_data={"ed_visit_count": anal_dict["edVisitCount12m"]},
+                ml_data={"predicted_probability": xgb_prob},
+                anomaly_data={"anomaly_flag": anomaly_flag},
+            )
+>>>>>>> origin/main
 
     triage_input = {
         "chiefComplaint": chief_complaint,
@@ -299,12 +354,27 @@ def _execute_triage_request(session: Session, data: dict[str, Any]) -> dict[str,
 
 
 def process_triage_request(
-    data: dict[str, Any], session: Session | None = None
+    data: dict[str, Any],
+    session: Session | None = None,
+    *,
+    allow_member_linkage: bool = False,
 ) -> dict[str, Any]:
+<<<<<<< HEAD
     """Process a symptom triage request via the deterministic safety engine and persist encounter."""
     validate_triage_request(data)
+=======
+    """Process a symptom triage request via the deterministic safety engine and persist encounter.
+
+    ``allow_member_linkage`` gates whether a supplied patientId is resolved
+    against CMS Member/ML data; it must only be True for an authenticated
+    PAYER caller. Defaults to False (no member linkage) so any caller that
+    doesn't explicitly authorize it gets the safe, anonymous-equivalent
+    behavior. The deterministic safety-engine screening is identical either
+    way and is never influenced by this flag.
+    """
+>>>>>>> origin/main
     if session is not None:
-        return _execute_triage_request(session, data)
+        return _execute_triage_request(session, data, allow_member_linkage=allow_member_linkage)
 
     with session_scope() as sess:
-        return _execute_triage_request(sess, data)
+        return _execute_triage_request(sess, data, allow_member_linkage=allow_member_linkage)

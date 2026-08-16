@@ -60,6 +60,12 @@ def member_analytical_result_to_dict(result: MemberAnalyticalResult) -> dict[str
         "totalEdSpend12m": float(snapshot.total_ed_related_cost) if snapshot else 0.0,
         "avoidableEdSpend12m": 0.0,  # DEFERRED: Avoidable spend requires claims detail
         "riskLevel": risk_level,
+        "riskLevelInterpretation": (
+            "This priority signal reflects historical high-utilization-pattern and "
+            "utilization-anomaly data only. It is not a medical necessity determination, "
+            "an emergency necessity determination, an indicator of clinical deterioration, "
+            "a finding of inappropriate ED use, or a determination of ED avoidability."
+        ),
         "claimsHistory": [],  # DEFERRED: Line-level claims history not stored on snapshot
         "assignedCareManager": None,  # DEFERRED: Care manager assignment not in Member schema
     }

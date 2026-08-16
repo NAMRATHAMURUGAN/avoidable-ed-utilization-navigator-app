@@ -1,4 +1,11 @@
-"""Public API routes for navigation actions and persistent interaction history."""
+"""API routes for navigation actions and persistent interaction history.
+
+GET /patients/<id>/history exposes a CMS member's full triage/navigation
+history and is PAYER-only. POST /navigation/action and the session-history
+lookup remain reachable anonymously (see inline notes) to preserve the
+existing anonymous patient navigation flow; only the member-linking branch
+of the action endpoint requires PAYER.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +15,11 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request
 
+from backend.auth.decorators import role_required
 from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
-from backend.repositories.provider_repository import ProviderRepository
-from backend.services.mock_cms_data import MOCK_PROVIDERS
-from backend.routes.patients import validate_patient_identifier
 
 navigation_blueprint = Blueprint("navigation", __name__, url_prefix="/api")
 VALID_ACTION_TYPES = {"PROVIDER_SELECTED", "APPOINTMENT_BOOKED"}
@@ -76,38 +81,12 @@ def record_navigation_action():
         return jsonify({"error": "patientId and member_id must match when both are supplied"}), 400
     patient_id_raw = supplied_patient_ids[0] if supplied_patient_ids else None
     member_id: int | None = None
-    if patient_id_raw is not None:
-        if isinstance(patient_id_raw, bool) or not isinstance(patient_id_raw, (str, int)):
-            return jsonify({"error": "patientId must be a string or integer identifier"}), 400
-        error = validate_patient_identifier(str(patient_id_raw).strip())
-        if error:
-            return jsonify({"error": error}), 400
-
-    session_id = data.get("sessionId")
-    if session_id is not None:
-        error = _validate_identifier(session_id, "sessionId")
-        if error:
-            return jsonify({"error": error}), 400
-
-    selected_provider_id = data.get("selectedProviderId")
-    if selected_provider_id is not None:
-        error = _validate_identifier(selected_provider_id, "selectedProviderId")
-        if error:
-            return jsonify({"error": error}), 400
-
-    selected_acuity = data.get("selectedAcuity")
-    if selected_acuity is not None and selected_acuity not in VALID_ACUITIES:
-        return jsonify({"error": "selectedAcuity is not supported"}), 400
-
-    action_details = data.get("actionDetails")
-    if action_details is not None and not isinstance(action_details, dict):
-        return jsonify({"error": "actionDetails must be an object"}), 400
 
     now = datetime.now(timezone.utc)
     action_id: int | None = None
 
     with session_scope() as session:
-        # Resolve member_id if patientId string/bene_id is passed.
+        # Resolve member_id if patientId string/bene_id is passed
         if patient_id_raw is not None:
             m_repo = MemberRepository(session)
             member_res = m_repo.get_combined_result_by_id_or_bene(str(patient_id_raw))
@@ -169,6 +148,7 @@ def record_navigation_action():
 
 
 @navigation_blueprint.get("/patients/<patient_id>/history", strict_slashes=False)
+@role_required("PAYER")
 def get_patient_history(patient_id: str):
     """GET /api/patients/<id>/history - Return persistent interaction and triage history."""
     error = validate_patient_identifier(patient_id)
@@ -176,6 +156,7 @@ def get_patient_history(patient_id: str):
         return jsonify({"error": error}), 400
     with session_scope() as session:
         m_repo = MemberRepository(session)
+
         member_res = m_repo.get_combined_result_by_id_or_bene(patient_id)
         if member_res is None:
             return jsonify({"error": "Patient not found"}), 404
