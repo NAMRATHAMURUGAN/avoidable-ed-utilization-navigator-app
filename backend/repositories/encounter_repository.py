@@ -18,21 +18,9 @@ class EncounterRepository:
         self._session = session
 
     def create_encounter(self, encounter: TriageEncounter) -> TriageEncounter:
-        try:
-            self._session.add(encounter)
-            self._session.flush()
-            return encounter
-        except (ProgrammingError, OperationalError):
-            self._session.rollback()
-            try:
-                bind = self._session.get_bind()
-                TriageEncounter.__table__.create(bind, checkfirst=True)
-                NavigationAction.__table__.create(bind, checkfirst=True)
-                self._session.add(encounter)
-                self._session.flush()
-                return encounter
-            except Exception:
-                return encounter
+        self._session.add(encounter)
+        self._session.flush()
+        return encounter
 
     def get_encounter(self, encounter_id: int) -> TriageEncounter | None:
         try:
@@ -53,20 +41,9 @@ class EncounterRepository:
             return None
 
     def create_action(self, action: NavigationAction) -> NavigationAction:
-        try:
-            self._session.add(action)
-            self._session.flush()
-            return action
-        except (ProgrammingError, OperationalError):
-            self._session.rollback()
-            try:
-                bind = self._session.get_bind()
-                NavigationAction.__table__.create(bind, checkfirst=True)
-                self._session.add(action)
-                self._session.flush()
-                return action
-            except Exception:
-                return action
+        self._session.add(action)
+        self._session.flush()
+        return action
 
     def get_member_encounters(self, member_id: int) -> list[TriageEncounter]:
         try:
