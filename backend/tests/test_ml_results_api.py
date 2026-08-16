@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app import create_app
 from backend.database import Base
+from backend.services.auth_service import register_user
 
 
 class MlResultsApiTestCase(unittest.TestCase):
@@ -49,10 +50,12 @@ class MlResultsApiTestCase(unittest.TestCase):
         yield self.db_session
 
     def _login_as_payer(self) -> None:
-        """Caller must already be inside a patch of auth_service.session_scope."""
-        self.client.post(
-            "/api/auth/register",
-            json={"email": "payer-mlresults@example.com", "password": "password123", "role": "PAYER"},
+        """Caller must already be inside a patch of auth_service.session_scope.
+        PAYER is provisioned directly via the service layer since POST
+        /api/auth/register only ever creates a PATIENT account."""
+        register_user(
+            email="payer-mlresults@example.com", password="password123", role="PAYER",
+            session=self.db_session,
         )
         response = self.client.post(
             "/api/auth/login",

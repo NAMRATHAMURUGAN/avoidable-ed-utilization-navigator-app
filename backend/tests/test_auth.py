@@ -24,6 +24,7 @@ from backend.auth.decorators import login_required, role_required
 from backend.database import Base
 from backend.models import User
 from backend.repositories.user_repository import UserRepository
+from backend.services.auth_service import register_user
 
 
 class AuthTestCase(unittest.TestCase):
@@ -77,6 +78,15 @@ class AuthTestCase(unittest.TestCase):
             "/api/auth/register", json={"email": email, "password": password, "role": role}
         )
 
+    def _provision_payer(self, email: str, password: str) -> None:
+        """Create a PAYER user directly via the service layer.
+
+        POST /api/auth/register only ever creates a PATIENT account (public
+        self-registration cannot grant PAYER), so PAYER test fixtures must be
+        provisioned this way instead of through the public route.
+        """
+        register_user(email=email, password=password, role="PAYER", session=self.db_session)
+
     def _login(self, email: str, password: str):
         return self.client.post("/api/auth/login", json={"email": email, "password": password})
 
@@ -99,9 +109,21 @@ class AuthTestCase(unittest.TestCase):
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
             first = self._register("dupe@example.com", "password123", "PATIENT")
             self.assertEqual(first.status_code, 201)
-            second = self._register("dupe@example.com", "password123", "PAYER")
+            second = self._register("dupe@example.com", "password123", "PATIENT")
             self.assertEqual(second.status_code, 400)
             self.assertIn("error", second.get_json())
+
+    def test_public_registration_rejects_payer_role(self) -> None:
+        """Public self-registration must never grant PAYER; PAYER stays a
+        valid stored role, but only provisionable outside this endpoint."""
+        with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            response = self._register("wouldbepayer@example.com", "password123", "PAYER")
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("error", response.get_json())
+
+            # No account was created for the rejected request.
+            login_response = self._login("wouldbepayer@example.com", "password123")
+            self.assertEqual(login_response.status_code, 401)
 
     def test_concurrent_duplicate_registration_handled_cleanly(self) -> None:
         """Regression test for the check-then-insert race between the
@@ -145,7 +167,7 @@ class AuthTestCase(unittest.TestCase):
                 return original_get_by_email(self, email)
 
             with patch.object(UserRepository, "get_by_email", flaky_get_by_email):
-                response = self._register("racecondition@example.com", "password123", "PAYER")
+                response = self._register("racecondition@example.com", "password123", "PATIENT")
 
             self.assertEqual(response.status_code, 400)
             self.assertEqual(
@@ -192,7 +214,7 @@ class AuthTestCase(unittest.TestCase):
 
     def test_successful_login(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
-            self._register("loginok@example.com", "password123", "PAYER")
+            self._provision_payer("loginok@example.com", "password123")
             response = self._login("loginok@example.com", "password123")
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
@@ -260,7 +282,7 @@ class AuthTestCase(unittest.TestCase):
 
     def test_me_with_valid_session_returns_safe_user_info(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
-            self._register("meuser@example.com", "password123", "PAYER")
+            self._provision_payer("meuser@example.com", "password123")
             login_response = self._login("meuser@example.com", "password123")
             self.assertEqual(login_response.status_code, 200)
 
@@ -302,7 +324,7 @@ class AuthTestCase(unittest.TestCase):
 
     def test_role_required_payer_permits_payer(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
-            self._register("payeruser@example.com", "password123", "PAYER")
+            self._provision_payer("payeruser@example.com", "password123")
             self._login("payeruser@example.com", "password123")
             response = self.client.get("/__test/payer-required")
             self.assertEqual(response.status_code, 200)

@@ -100,6 +100,7 @@ def test_recommendations_use_latest_runs_and_resolve_beneficiary_id(client_and_s
     session.add_all(
         [
             XGBoostUtilizationPrediction(
+                id=10,
                 member_id=10,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=stale_xgb.model_run_id,
@@ -109,6 +110,7 @@ def test_recommendations_use_latest_runs_and_resolve_beneficiary_id(client_and_s
                 dataset_split="test",
             ),
             XGBoostUtilizationPrediction(
+                id=11,
                 member_id=10,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=latest_xgb.model_run_id,
@@ -118,6 +120,7 @@ def test_recommendations_use_latest_runs_and_resolve_beneficiary_id(client_and_s
                 dataset_split="test",
             ),
             UtilizationAnomalyResult(
+                id=10,
                 member_id=10,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=stale_anomaly.model_run_id,
@@ -127,6 +130,7 @@ def test_recommendations_use_latest_runs_and_resolve_beneficiary_id(client_and_s
                 generated_at=datetime.now(timezone.utc),
             ),
             UtilizationAnomalyResult(
+                id=11,
                 member_id=10,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=latest_anomaly.model_run_id,
@@ -159,6 +163,7 @@ def test_recommendations_ignore_outputs_when_current_model_run_is_absent(client_
     session.add_all(
         [
             XGBoostUtilizationPrediction(
+                id=12,
                 member_id=11,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=legacy_xgb.model_run_id,
@@ -168,6 +173,7 @@ def test_recommendations_ignore_outputs_when_current_model_run_is_absent(client_
                 dataset_split="test",
             ),
             UtilizationAnomalyResult(
+                id=12,
                 member_id=11,
                 utilization_snapshot_id=snapshot.id,
                 model_run_id=legacy_anomaly.model_run_id,

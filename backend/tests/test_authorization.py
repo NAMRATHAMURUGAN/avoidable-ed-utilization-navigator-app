@@ -32,6 +32,7 @@ from backend.models import (
     UtilizationAnomalyResult,
     XGBoostUtilizationPrediction,
 )
+from backend.services.auth_service import register_user
 
 PAYER_ONLY_GET_ENDPOINTS = [
     "/api/patients",
@@ -155,11 +156,20 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
         self.db_session.commit()
 
     def _register_and_login(self, email: str, role: str) -> None:
-        """Caller must already be inside a patch of auth_service.session_scope."""
-        self.client.post(
-            "/api/auth/register",
-            json={"email": email, "password": "password123", "role": role},
-        )
+        """Caller must already be inside a patch of auth_service.session_scope.
+
+        PATIENT accounts go through the public registration endpoint (the
+        flow it actually serves). PAYER accounts are provisioned directly via
+        the service layer, since POST /api/auth/register only ever creates a
+        PATIENT account.
+        """
+        if role == "PAYER":
+            register_user(email=email, password="password123", role="PAYER", session=self.db_session)
+        else:
+            self.client.post(
+                "/api/auth/register",
+                json={"email": email, "password": "password123", "role": role},
+            )
         login_response = self.client.post(
             "/api/auth/login", json={"email": email, "password": "password123"}
         )

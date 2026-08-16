@@ -5,11 +5,13 @@
  */
 
 const state = {
+  currentUser: null, // { id, email, role } from GET /api/auth/me; role is 'PATIENT' | 'PAYER'
   activeRole: 'PATIENT', // 'PATIENT' | 'PAYER_ADMIN'
   activeRoute: 'triage',
   patients: [],
   patientsLoaded: false,
   analytics: null,
+  analyticsLoaded: false,
   currentEncounter: null,
   currentSessionId: null,
   selectedMemberId: null,
@@ -69,6 +71,133 @@ async function request(path, options = {}) {
 }
 
 /**
+ * AUTHENTICATION: login / register / logout / session bootstrap
+ * The server is the sole source of truth for role; the frontend never lets
+ * a caller pick a role for themselves.
+ */
+function showAuthScreen(mode = 'login') {
+  $('#app-shell')?.classList.add('role-hidden');
+  $('#auth-screen')?.classList.remove('role-hidden');
+  setAuthMode(mode);
+}
+
+function showAppShell() {
+  $('#auth-screen')?.classList.add('role-hidden');
+  $('#app-shell')?.classList.remove('role-hidden');
+  const emailLabel = $('#current-user-email');
+  if (emailLabel) emailLabel.textContent = state.currentUser?.email || '';
+}
+
+function setAuthMode(mode) {
+  const isLogin = mode === 'login';
+  $('#login-form')?.classList.toggle('role-hidden', !isLogin);
+  $('#register-form')?.classList.toggle('role-hidden', isLogin);
+  const title = $('#auth-screen-title');
+  if (title) title.textContent = isLogin ? 'Log In' : 'Create Account';
+  const subtitle = $('#auth-screen-subtitle');
+  if (subtitle) subtitle.textContent = isLogin
+    ? 'Sign in to continue to Care Navigation Navigator.'
+    : 'Register for a Patient or Payer account.';
+  const toggleBtn = $('#auth-toggle-mode');
+  if (toggleBtn) toggleBtn.textContent = isLogin ? 'New here? Create an account' : 'Already have an account? Log in';
+  const errorBox = $('#auth-error');
+  if (errorBox) { errorBox.textContent = ''; errorBox.classList.add('role-hidden'); }
+}
+
+function toggleAuthMode() {
+  const isLoginVisible = !$('#login-form')?.classList.contains('role-hidden');
+  setAuthMode(isLoginVisible ? 'register' : 'login');
+}
+
+function showAuthError(message) {
+  const errorBox = $('#auth-error');
+  if (!errorBox) return;
+  errorBox.textContent = message;
+  errorBox.classList.remove('role-hidden');
+}
+
+/**
+ * Enter the authenticated workspace for the given /api/auth/me user,
+ * mapping the backend's PATIENT/PAYER role onto the frontend's existing
+ * PATIENT/PAYER_ADMIN internal role labels.
+ */
+async function enterAuthenticatedWorkspace(user) {
+  state.currentUser = user;
+  showAppShell();
+  populateMemberSelectors();
+  await setRole(user.role === 'PAYER' ? 'PAYER_ADMIN' : 'PATIENT');
+}
+
+async function checkSession() {
+  try {
+    const user = await request('/api/auth/me');
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    // Unauthenticated (401) is the expected state for a fresh visit — show
+    // the login screen instead of an error.
+    showAuthScreen('login');
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const email = $('#login-email').value.trim();
+  const password = $('#login-password').value;
+  try {
+    const user = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+async function handleRegister(event) {
+  event.preventDefault();
+  const email = $('#register-email').value.trim();
+  const password = $('#register-password').value;
+  try {
+    // Public self-registration only ever creates a PATIENT account; the
+    // backend rejects any other role outright (see backend/routes/auth.py).
+    await request('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, role: 'PATIENT' }),
+    });
+    const user = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    await enterAuthenticatedWorkspace(user);
+  } catch (error) {
+    showAuthError(error.message);
+  }
+}
+
+async function handleLogout() {
+  try {
+    await request('/api/auth/logout', { method: 'POST' });
+  } catch (error) {
+    console.error('Logout error:', error);
+  }
+  // Clear cached payer-only/session data so it can never leak into whatever
+  // session (or role) logs in next in this browser tab.
+  state.currentUser = null;
+  state.patients = [];
+  state.patientsLoaded = false;
+  state.analytics = null;
+  state.analyticsLoaded = false;
+  state.currentEncounter = null;
+  state.currentSessionId = null;
+  state.selectedMemberId = null;
+  showAuthScreen('login');
+}
+
+/**
  * DYNAMIC SIDEBAR NAVIGATION RENDERER
  */
 function renderSidebarNav(role) {
@@ -121,9 +250,6 @@ function renderSidebarNav(role) {
 async function setRole(role) {
   state.activeRole = role;
 
-  const selector = $('#role-selector');
-  if (selector) selector.value = role;
-
   const workspaceTitle = $('#workspace-title');
 
   if (role === 'PATIENT') {
@@ -142,7 +268,9 @@ async function setRole(role) {
 
     $$('.payer-only').forEach(el => el.classList.remove('role-hidden'));
 
-    // Population data is only fetched once the Payer experience is actually opened
+    // Population data and analytics are only fetched once the Payer
+    // experience is actually opened, and only for an authenticated PAYER —
+    // never for a PATIENT session.
     if (!state.patientsLoaded) {
       try {
         state.patients = (await request('/api/patients')) || [];
@@ -150,6 +278,14 @@ async function setRole(role) {
         populateMemberSelectors();
       } catch (error) {
         console.error('Failed to load population data:', error);
+      }
+    }
+    if (!state.analyticsLoaded) {
+      try {
+        state.analytics = (await request('/api/analytics')) || null;
+        state.analyticsLoaded = true;
+      } catch (error) {
+        console.error('Failed to load analytics:', error);
       }
     }
   }
@@ -898,10 +1034,11 @@ async function submitChat(event) {
  * Bind DOM Event Handlers
  */
 function bindEvents() {
-  // Role Selector listener
-  $('#role-selector')?.addEventListener('change', e => {
-    setRole(e.target.value);
-  });
+  // Authentication listeners
+  $('#login-form')?.addEventListener('submit', handleLogin);
+  $('#register-form')?.addEventListener('submit', handleRegister);
+  $('#auth-toggle-mode')?.addEventListener('click', toggleAuthMode);
+  $('#logout-btn')?.addEventListener('click', handleLogout);
 
   // Navigation event delegation
   document.addEventListener('click', event => {
@@ -962,16 +1099,14 @@ async function init() {
     if ($('#self-patient-pref-setting')) $('#self-patient-pref-setting').value = state.patientProfile.prefSetting;
     if ($('#self-patient-comm')) $('#self-patient-comm').value = state.patientProfile.commPref;
 
-    // Load aggregate analytics only. The member-level population dataset is
-    // fetched lazily, only when the Payer experience is opened (see setRole),
-    // so it is never pulled into memory during a Patient session.
-    state.analytics = (await request('/api/analytics')) || null;
-
-    populateMemberSelectors();
     bindEvents();
 
-    // Default Role & View Initialization
-    await setRole('PATIENT');
+    // Session bootstrap: GET /api/auth/me determines whether to show the
+    // login/register screen or the workspace for the authenticated role.
+    // Population analytics and the member cohort are fetched lazily, only
+    // once an authenticated PAYER opens that experience (see setRole), so
+    // they are never pulled into memory during a Patient session.
+    await checkSession();
   } catch (error) {
     console.error('Initialization error:', error);
     document.querySelector('.main-content').innerHTML = `

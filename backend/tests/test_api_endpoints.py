@@ -26,6 +26,7 @@ from backend.models import (
     XGBoostUtilizationPrediction,
 )
 from backend.repositories.member_repository import MemberRepository, MemberAnalyticalResult
+from backend.services.auth_service import register_user
 from backend.services.patient_service import member_analytical_result_to_dict
 
 
@@ -55,11 +56,13 @@ class ApiEndpointsTestCase(unittest.TestCase):
         yield self.db_session
 
     def _login_as_payer(self) -> None:
-        """Register+login a PAYER user. Caller must be inside a patch of
-        backend.services.auth_service.session_scope."""
-        self.client.post(
-            "/api/auth/register",
-            json={"email": "payer-fixture@example.com", "password": "password123", "role": "PAYER"},
+        """Provision+login a PAYER user. Caller must be inside a patch of
+        backend.services.auth_service.session_scope. PAYER is provisioned
+        directly via the service layer since POST /api/auth/register only
+        ever creates a PATIENT account."""
+        register_user(
+            email="payer-fixture@example.com", password="password123", role="PAYER",
+            session=self.db_session,
         )
         response = self.client.post(
             "/api/auth/login",
