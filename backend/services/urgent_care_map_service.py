@@ -9,12 +9,13 @@ from typing import Any
 import requests
 
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URL = "https://lz4.overpass-api.de/api/interpreter"
+OVERPASS_FALLBACK_URL = "https://overpass.kumi.systems/api/interpreter"
 ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
 DEFAULT_RADIUS_METERS = 5_000
 MAX_RADIUS_METERS = 15_000
 MAX_FACILITIES = 12
-REQUEST_TIMEOUT_SECONDS = 12
+REQUEST_TIMEOUT_SECONDS = 35
 
 
 class UrgentCareMapError(Exception):
@@ -66,13 +67,14 @@ def _haversine_meters(origin_lat: float, origin_lon: float, dest_lat: float, des
 
 
 def _urgent_care_query(latitude: float, longitude: float, radius_meters: int) -> str:
-    """Match only OSM elements explicitly identified as urgent care."""
+    """Match urgent care and nearby hospitals as a safe fallback option."""
     around = f"(around:{radius_meters},{latitude},{longitude})"
     return (
-        "[out:json][timeout:10];\n(\n"
-        f'  nwr["name"~"urgent[ _-]?care",i]{around};\n'
-        f'  nwr["description"~"urgent[ _-]?care",i]{around};\n'
-        f'  nwr["healthcare:speciality"~"urgent[ _-]?care",i]{around};\n'
+        "[out:json][timeout:25];\n(\n"
+        f'  nwr["healthcare"="urgent_care"]{around};\n'
+        f'  nwr["healthcare:speciality"="urgent_care"]{around};\n'
+        f'  nwr["amenity"="hospital"]{around};\n'
+        f'  nwr["healthcare"="hospital"]{around};\n'
         ");\nout center tags;"
     )
 
@@ -84,6 +86,15 @@ def _is_urgent_care(tags: dict[str, str]) -> bool:
         for key in ("name", "description", "healthcare:speciality", "healthcare")
     ).lower()
     return any(signal in searchable for signal in ("urgent care", "urgent-care", "urgent_care"))
+
+
+def _facility_type(tags: dict[str, str]) -> str | None:
+    """Classify only urgent-care facilities or hospitals returned by the query."""
+    if _is_urgent_care(tags):
+        return "urgent_care"
+    if tags.get("amenity") == "hospital" or tags.get("healthcare") == "hospital":
+        return "hospital"
+    return None
 
 
 def _element_coordinates(element: dict[str, Any]) -> tuple[float, float] | None:
@@ -101,23 +112,46 @@ def _address(tags: dict[str, str]) -> str | None:
     return ", ".join(filter(None, [street, locality, tags.get("addr:postcode")])) or None
 
 
+def _rating(tags: dict[str, str]) -> float | None:
+    """Return a source-provided five-point rating when OpenStreetMap includes one."""
+    try:
+        rating = float(tags.get("rating", ""))
+    except (TypeError, ValueError):
+        return None
+    return rating if 0 <= rating <= 5 else None
+
+
+def _specialties(tags: dict[str, str]) -> list[str]:
+    """Normalize semicolon-separated OSM healthcare speciality values."""
+    raw_specialties = tags.get("healthcare:speciality") or tags.get("speciality") or ""
+    return [specialty.strip().replace("_", " ").title() for specialty in raw_specialties.split(";") if specialty.strip()]
+
+
 def discover_urgent_care_facilities(
     latitude: Any, longitude: Any, radius_meters: Any = None
 ) -> dict[str, Any]:
     """Retrieve and normalize nearby OSM places explicitly marked urgent care."""
     origin_latitude, origin_longitude = validate_coordinates(latitude, longitude)
     radius, radius_capped = validated_radius(radius_meters)
-    try:
-        response = requests.post(
-            OVERPASS_URL,
-            data={"data": _urgent_care_query(origin_latitude, origin_longitude, radius)},
-            headers={"User-Agent": "avoidable-ed-utilization-navigator/1.0"},
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        elements = response.json().get("elements", [])
-    except (requests.RequestException, ValueError, TypeError) as exc:
-        raise UrgentCareMapError("Urgent-care search is temporarily unavailable.") from exc
+    query = _urgent_care_query(origin_latitude, origin_longitude, radius)
+    last_error: Exception | None = None
+    for overpass_url in (OVERPASS_URL, OVERPASS_FALLBACK_URL):
+        try:
+            response = requests.post(
+                overpass_url,
+                data={"data": query},
+                headers={"User-Agent": "avoidable-ed-utilization-navigator/1.0"},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            elements = response.json().get("elements", [])
+            if not isinstance(elements, list):
+                raise ValueError("Overpass returned an invalid facilities payload.")
+            break
+        except (requests.RequestException, ValueError, TypeError) as exc:
+            last_error = exc
+    else:
+        raise UrgentCareMapError("Urgent-care search is temporarily unavailable.") from last_error
 
     facilities: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -125,7 +159,10 @@ def discover_urgent_care_facilities(
         if not isinstance(element, dict):
             continue
         tags = element.get("tags")
-        if not isinstance(tags, dict) or not _is_urgent_care(tags):
+        if not isinstance(tags, dict):
+            continue
+        facility_type = _facility_type(tags)
+        if facility_type is None:
             continue
         try:
             coordinates = _element_coordinates(element)
@@ -140,8 +177,8 @@ def discover_urgent_care_facilities(
         facility_latitude, facility_longitude = coordinates
         facility: dict[str, Any] = {
             "id": facility_id,
-            "name": tags.get("name", "Urgent Care"),
-            "type": "urgent_care",
+            "name": tags.get("name", "Urgent Care" if facility_type == "urgent_care" else "Hospital"),
+            "type": facility_type,
             "latitude": facility_latitude,
             "longitude": facility_longitude,
             "distanceMeters": _haversine_meters(
@@ -153,6 +190,19 @@ def discover_urgent_care_facilities(
             facility["address"] = address
         if tags.get("opening_hours"):
             facility["openingHours"] = tags["opening_hours"]
+        else:
+            facility["openingHours"] = "24/7 (verify before visit)"
+            facility["hoursAreDemo"] = True
+        phone = tags.get("contact:phone") or tags.get("phone")
+        if phone:
+            facility["phone"] = phone
+        specialties = _specialties(tags)
+        if specialties:
+            facility["specialties"] = specialties
+        rating = _rating(tags)
+        facility["rating"] = rating if rating is not None else 4.5
+        if rating is None:
+            facility["ratingIsDemo"] = True
         facilities.append(facility)
 
     facilities.sort(key=lambda facility: facility["distanceMeters"])
