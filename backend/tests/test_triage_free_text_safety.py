@@ -126,12 +126,80 @@ class TriageFreeTextSafetyServiceTests(unittest.TestCase):
             "My mother had difficulty breathing last year",
             "I am studying heart attack symptoms",
             "How does breathing work?",
+            "I watched a video about shortness of breath",
+            "What are the symptoms of a heart attack?",
         ]
         for complaint in non_active_complaints:
             with self.subTest(complaint=complaint):
                 result = self._triage(chiefComplaint=complaint)
                 self.assertNotEqual(result["recommendedAcuity"], "EMERGENCY")
                 self.assertFalse(result["isEmergencyRedFlag"])
+
+    def test_question_framing_that_contains_a_literal_rules_alias_still_reaches_engine(self) -> None:
+        """"What causes chest pain?" is correctly suppressed at the NLP
+        layer (detect_safety_concepts returns no concept), but the
+        deterministic engine.py independently re-scans the raw
+        chiefComplaint against backend/safety/rules.py's own literal
+        aliases -- which include bare "chest pain" -- so this still reaches
+        EMERGENCY end-to-end. This is existing, untouched engine.py
+        behavior (conservative-by-design, over-inclusive rather than
+        under-inclusive) that the NLP layer has no mechanism to override,
+        by architecture: the NLP layer can only ADD candidate concepts, it
+        can never suppress what the engine's own independent scan finds."""
+        result = self._triage(chiefComplaint="What causes chest pain?")
+        self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+        self.assertTrue(result["isEmergencyRedFlag"])
+
+    # ------------------------------------------------------------------
+    # CARDIAC/CHEST, STROKE, SYNCOPE NATURAL-LANGUAGE VARIATIONS (audit
+    # follow-up): reordered/colloquial phrasings the literal phrase list
+    # alone could not express.
+    # ------------------------------------------------------------------
+
+    def test_cardiac_chest_natural_language_variations_reach_emergency(self) -> None:
+        complaints = [
+            "in my chest there's crushing pain",
+            "pain in my chest",
+            "pressure in my chest",
+            "severe pressure in my chest",
+            "I feel intense pressure in my chest and I'm sweating",
+            "my chest feels extremely tight",
+            "chest hurts",
+            "I've had this crushing feeling in my chest for the last 20 minutes and it's radiating to my arm",
+        ]
+        for complaint in complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_stroke_natural_language_variations_reach_emergency(self) -> None:
+        complaints = [
+            "my speech suddenly became slurred",
+            "I suddenly can't move my left arm",
+            "one side of my face is drooping",
+            "weakness on one side of my body",
+            "my face suddenly feels numb on one side",
+            "About ten minutes ago my face started drooping on the right side and my words are coming out slurred",
+        ]
+        for complaint in complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_syncope_natural_language_variations_reach_emergency(self) -> None:
+        complaints = ["I blacked out", "blacked out", "blackd out"]
+        for complaint in complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_question_framing_guard_does_not_suppress_genuine_complaint(self) -> None:
+        result = self._triage(chiefComplaint="Is this a heart attack? I have crushing chest pain")
+        self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+        self.assertTrue(result["isEmergencyRedFlag"])
 
     # ------------------------------------------------------------------
     # CHECKLIST REGRESSION: the pre-existing checkbox-driven path must

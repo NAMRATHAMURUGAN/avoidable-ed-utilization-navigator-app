@@ -159,9 +159,93 @@ class DetectSafetyConceptsTests(unittest.TestCase):
             "My mother had difficulty breathing last year",
             "I am studying heart attack symptoms",
             "How does breathing work?",
+            "I watched a video about shortness of breath",
         ):
             with self.subTest(text=text):
                 self.assertEqual(detect_safety_concepts(text), set())
+
+    def test_cardiac_chest_natural_language_variations(self) -> None:
+        """Reordered/colloquial cardiac-chest phrasings the literal phrase
+        list alone cannot express (audit follow-up)."""
+        for text in (
+            "in my chest there's crushing pain",
+            "pain in my chest",
+            "pressure in my chest",
+            "severe pressure in my chest",
+            "I feel intense pressure in my chest and I'm sweating",
+            "my chest feels extremely tight",
+            "chest hurts",
+            "I've had this crushing feeling in my chest for the last 20 minutes and it's radiating to my arm",
+        ):
+            with self.subTest(text=text):
+                self.assertIn(CHEST_PAIN_PRESSURE, detect_safety_concepts(text))
+
+    def test_vague_cardiac_references_intentionally_not_flagged(self) -> None:
+        """Generic "something's wrong with my heart" framing is not a
+        specific recognized warning sign -- intentionally excluded per
+        product direction, not a bug."""
+        for text in (
+            "I think something is wrong with my heart",
+            "my heart feels like it's going to explode",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(detect_safety_concepts(text), set())
+
+    def test_stroke_natural_language_variations(self) -> None:
+        """Reordered/colloquial stroke phrasings (audit follow-up)."""
+        for text in (
+            "my speech suddenly became slurred",
+            "I suddenly can't move my left arm",
+            "one side of my face is drooping",
+            "weakness on one side of my body",
+            "my face suddenly feels numb on one side",
+            "About ten minutes ago my face started drooping on the right side and my words are coming out slurred",
+        ):
+            with self.subTest(text=text):
+                self.assertIn(STROKE_WARNING, detect_safety_concepts(text))
+
+    def test_ambiguous_stroke_phrasing_intentionally_not_flagged(self) -> None:
+        """"can't talk right now" is an extremely common, unrelated phrase
+        ("I can't talk right now, I'm busy") -- too high a false-positive
+        risk to treat as a stroke warning sign."""
+        self.assertEqual(detect_safety_concepts("can't talk right"), set())
+
+    def test_syncope_natural_language_variations(self) -> None:
+        """"Blacked out" word-form variant and its typo (audit follow-up)."""
+        for text in ("I blacked out", "blacked out", "blackd out"):
+            with self.subTest(text=text):
+                self.assertIn(SYNCOPE, detect_safety_concepts(text))
+
+    def test_narrative_syncope_descriptions_are_a_known_gap(self) -> None:
+        """Narrative descriptions that imply unconsciousness without using
+        any recognized trigger word ("woke up on the floor", "everything
+        went black") are outside what a controlled, deterministic phrase/
+        anchor-group matcher can safely generalize to without materially
+        raising false-positive risk. Documented gap, not silently dropped."""
+        for text in (
+            "I just woke up on the floor and don't remember what happened",
+            "I was standing in line and then everything went black and I woke up on the ground a minute later",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(detect_safety_concepts(text), set())
+
+    def test_question_framing_without_first_person_is_not_flagged(self) -> None:
+        """General informational questions ("What are the symptoms of...")
+        with no first-person marker anywhere are not a personal complaint."""
+        for text in (
+            "What are the symptoms of a heart attack?",
+            "What causes chest pain?",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(detect_safety_concepts(text), set())
+
+    def test_question_framing_guard_does_not_suppress_genuine_complaints(self) -> None:
+        """A genuine first-person complaint must never be suppressed just
+        because it also contains a question -- safety recall takes priority
+        over the question-framing guard."""
+        concepts = detect_safety_concepts("Is this a heart attack? I have crushing chest pain")
+        self.assertIn(CARDIAC_EMERGENCY_CONCERN, concepts)
+        self.assertIn(CHEST_PAIN_PRESSURE, concepts)
 
 
 class ExtractSafetyConceptPhrasesTests(unittest.TestCase):

@@ -71,7 +71,7 @@ _CRITICAL_WORDS: tuple[str, ...] = (
     "stroke", "drooping", "facial", "face", "slurred", "speech", "speaking",
     "sudden", "suddenly", "weakness", "numbness", "properly", "passed",
     "passing", "pass", "fainted", "fainting", "lost", "consciousness",
-    "blackout",
+    "blackout", "blacked",
 )
 
 
@@ -169,6 +169,12 @@ _CONCEPT_GROUPS: tuple[tuple[str, tuple[str, ...], str], ...] = (
             "chest tightness",
             "chest feels crushed",
             "my chest feels crushed",
+            # Same as the existing backend/safety/rules.py RF-CARDIO-001
+            # aliases -- added here too so the NLP layer's own phrase list
+            # is self-consistent with what the engine already recognizes,
+            # not reliant on the engine's independent literal scan alone.
+            "pain in my chest",
+            "pressure in my chest",
         ),
         "chest pain",
     ),
@@ -219,6 +225,9 @@ _CONCEPT_GROUPS: tuple[tuple[str, tuple[str, ...], str], ...] = (
             "lost consciousness",
             "loss of consciousness",
             "blackout",
+            "blacked out",
+            "black out",
+            "blacking out",
         ),
         "passed out",
     ),
@@ -249,6 +258,33 @@ _ANCHOR_GROUP_PATTERNS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
     (SHORTNESS_OF_BREATH, (("unable",), ("breathe", "breathing", "breath"))),
     # "unbearable/severe/extreme breathing problem"
     (SHORTNESS_OF_BREATH, (("unbearable", "severe", "extreme", "intense"), ("breathing", "breath"), ("problem",))),
+
+    # "crushing pain in my chest" / "crushing feeling in my chest" (reordered
+    # "crushing chest pain"). Bare co-occurrence, no severity gate, for the
+    # same reason "chest pain"/"chest pressure" already require none: this
+    # product's existing design treats any chest-pain-family mention as an
+    # unconditional signal, not just severe ones.
+    (CHEST_PAIN_PRESSURE, (("crushing",), ("chest",))),
+    # "my chest feels extremely tight" (reordered/different word form of
+    # "chest tightness").
+    (CHEST_PAIN_PRESSURE, (("chest",), ("tight", "tightness", "tightening"))),
+    # "chest hurts" / "my chest is hurting".
+    (CHEST_PAIN_PRESSURE, (("chest",), ("hurt", "hurts", "hurting"))),
+
+    # "my speech suddenly became slurred" (reordered "slurred speech").
+    (STROKE_WARNING, (("speech",), ("slurred",))),
+    # "one side of my face is drooping" (reordered "face drooping").
+    (STROKE_WARNING, (("face", "facial"), ("drooping",))),
+    # "weakness on one side of my body" (missing "sudden", extra words after
+    # "side" that break the exact literal phrase "sudden weakness on one side").
+    (STROKE_WARNING, (("weakness",), ("side",))),
+    # "my face suddenly feels numb on one side" (adjective "numb", not the
+    # literal alias's noun form "numbness").
+    (STROKE_WARNING, (("numb", "numbness"), ("side",))),
+    # "I suddenly can't move my left arm" -- sudden inability to move a limb
+    # or side is a recognized FAST stroke warning sign distinct from the
+    # existing "weakness"/"numbness" phrasing.
+    (STROKE_WARNING, (("cant", "cannot", "unable"), ("move",), ("arm", "leg", "side", "face", "body"))),
 )
 
 
@@ -284,7 +320,7 @@ def _anchor_groups_match(tokens: list[str], groups: tuple[tuple[str, ...], ...],
 _REPORTING_CONTEXT_PHRASES: tuple[str, ...] = (
     "read about", "reading about", "studying", "learning about", "learned about",
     "want to learn about", "want to know about", "curious about", "researching",
-    "an article about", "a book about",
+    "an article about", "a book about", "watched a video about", "saw a video about",
 )
 
 _THIRD_PARTY_PATTERN = re.compile(
@@ -298,6 +334,29 @@ def _is_reporting_or_third_party_context(normalized_text: str) -> bool:
     if any(_phrase_in_text(normalized_text, phrase) for phrase in _REPORTING_CONTEXT_PHRASES):
         return True
     return bool(_THIRD_PARTY_PATTERN.search(normalized_text))
+
+
+# ---------------------------------------------------------------------------
+# Question/definitional framing guard: a narrow, separate guard for general
+# questions about a concept ("What are the symptoms of a heart attack?")
+# rather than a reported personal experience. Deliberately requires the
+# ABSENCE of any first-person marker anywhere in the text, so a genuine
+# complaint that happens to also contain a question ("Is this a heart
+# attack? I have crushing chest pain") is never suppressed -- only text that
+# is purely informational in framing.
+# ---------------------------------------------------------------------------
+_QUESTION_FRAMING_PHRASES: tuple[str, ...] = (
+    "what are the symptoms of", "what is the symptom of", "what causes",
+    "signs of a", "symptoms of a", "how do you know if",
+)
+
+_FIRST_PERSON_MARKERS: frozenset[str] = frozenset({"i", "im", "ive", "id", "my", "me", "myself"})
+
+
+def _is_question_framing_without_first_person(normalized_text: str) -> bool:
+    if not any(_phrase_in_text(normalized_text, phrase) for phrase in _QUESTION_FRAMING_PHRASES):
+        return False
+    return not (set(_tokens(normalized_text)) & _FIRST_PERSON_MARKERS)
 
 
 def detect_safety_concepts(text: str) -> set[str]:
@@ -317,6 +376,8 @@ def detect_safety_concepts(text: str) -> set[str]:
         return set()
 
     if _is_reporting_or_third_party_context(normalized):
+        return set()
+    if _is_question_framing_without_first_person(normalized):
         return set()
 
     candidates = {normalized}
