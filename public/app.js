@@ -519,6 +519,25 @@ async function selectUrgentCareFacility(facilityId) {
     state.urgentCareMap = { ...state.urgentCareMap, route: routeData, status: 'loaded' };
   } catch (error) { state.urgentCareMap = { ...state.urgentCareMap, status: 'loaded', error: error.message }; }
   renderUrgentCareMap();
+
+  // Real pathway selection: the patient picked a specific live facility.
+  // Persisted regardless of whether the driving-route calculation above
+  // succeeded -- the selection itself is the navigation action, independent
+  // of ORS availability. OSM facility ids are not backend Provider rows
+  // (they're live Overpass results, never seeded into ProviderRepository),
+  // so selectedProviderId is intentionally omitted -- sending one would 404
+  // against a real provider lookup; the facility identity instead lives in
+  // actionDetails, which is never validated against ProviderRepository.
+  persistNavigationAction({
+    actionType: 'PROVIDER_SELECTED',
+    selectedAcuity: 'URGENT_CARE',
+    actionDetails: {
+      facilityName: facility.name,
+      facilityAddress: facility.address || null,
+      facilitySourceId: facility.id,
+      source: 'openstreetmap',
+    },
+  });
 }
 
 /**
@@ -659,11 +678,42 @@ const PATHWAY_HEADLINES = {
 };
 
 /**
+ * Persist a real patient navigation/pathway-selection action against the
+ * active triage encounter (POST /api/navigation/action). No-ops -- never
+ * calls the backend -- when there is no active encounter to attach the
+ * action to, exactly matching the guard the existing telehealth-booking
+ * flow already relied on (anonymous/pre-triage browsing never records a
+ * stray action). Returns the parsed response, or null if nothing was
+ * recorded (no active encounter) or the request failed.
+ */
+async function persistNavigationAction({ actionType, selectedAcuity, selectedProviderId, actionDetails }) {
+  if (!state.currentEncounter?.encounterId) return null;
+  try {
+    return await request('/api/navigation/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        encounterId: state.currentEncounter.encounterId,
+        actionType,
+        selectedAcuity,
+        ...(selectedProviderId ? { selectedProviderId } : {}),
+        ...(actionDetails ? { actionDetails } : {}),
+      }),
+    });
+  } catch (error) {
+    console.error('Failed to record navigation action:', error);
+    return null;
+  }
+}
+
+/**
  * Render a list of real providers (from POST /api/triage's own
  * suitableProviders, or a live GET /api/providers call), or an honest
- * "not currently available" state -- never a fabricated provider.
+ * "not currently available" state -- never a fabricated provider. Each
+ * provider is a real ProviderRepository row, so its id can safely be sent
+ * as navigation_actions.selected_provider_id (validated backend-side).
  */
-function renderProviderOptionsOrEmptyState(providers) {
+function renderProviderOptionsOrEmptyState(providers, acuity) {
   if (!providers || providers.length === 0) {
     return '<div class="notice">Primary care navigation is available through the provider directory.</div>';
   }
@@ -675,11 +725,35 @@ function renderProviderOptionsOrEmptyState(providers) {
             <h4>${escapeHtml(p.name)}</h4>
             <p>${escapeHtml(p.address || 'Address unavailable')}${p.isDemo ? ' <span class="demo-tag">Demo</span>' : ''}</p>
           </div>
-          ${p.phone ? `<a href="tel:${escapeHtml(p.phone)}" class="button secondary">Call</a>` : ''}
+          <div class="provider-option-actions">
+            ${p.phone ? `<a href="tel:${escapeHtml(p.phone)}" class="button secondary">Call</a>` : ''}
+            <button type="button" class="button primary" data-select-provider-id="${escapeHtml(p.id)}" data-select-provider-acuity="${escapeHtml(acuity)}" data-select-provider-name="${escapeHtml(p.name)}">Select This Provider</button>
+          </div>
         </div>
       `).join('')}
     </div>
   `;
+}
+
+/**
+ * Records a real PROVIDER_SELECTED navigation action when a patient picks a
+ * specific provider from a recommendation list (e.g. Primary Care). Mirrors
+ * the existing telehealth-booking persistence, but for a lighter-weight
+ * "selected this provider" action rather than a completed booking.
+ */
+async function selectRecommendedProvider(button) {
+  const providerId = button.dataset.selectProviderId;
+  const acuity = button.dataset.selectProviderAcuity;
+  const providerName = button.dataset.selectProviderName;
+  button.disabled = true;
+  button.textContent = 'Recording selection…';
+  const result = await persistNavigationAction({
+    actionType: 'PROVIDER_SELECTED',
+    selectedAcuity: acuity,
+    selectedProviderId: providerId,
+    actionDetails: { providerName },
+  });
+  button.textContent = result ? 'Selected ✓' : 'Selection could not be recorded';
 }
 
 /**
@@ -835,27 +909,16 @@ async function renderSimulatedTelehealthReady(provider) {
     </div>
   `;
 
-  if (state.currentEncounter?.encounterId) {
-    try {
-      await request('/api/navigation/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          encounterId: state.currentEncounter.encounterId,
-          actionType: 'APPOINTMENT_BOOKED',
-          selectedProviderId: provider?.id,
-          selectedAcuity: 'TELEHEALTH',
-          actionDetails: {
-            providerName: provider?.name || 'Simulated Telehealth Provider',
-            appointmentTime: 'Now (simulated)',
-            isSimulatedDemo: true,
-          },
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to record simulated telehealth action:', error);
-    }
-  }
+  await persistNavigationAction({
+    actionType: 'APPOINTMENT_BOOKED',
+    selectedAcuity: 'TELEHEALTH',
+    selectedProviderId: provider?.id,
+    actionDetails: {
+      providerName: provider?.name || 'Simulated Telehealth Provider',
+      appointmentTime: 'Now (simulated)',
+      isSimulatedDemo: true,
+    },
+  });
 }
 
 async function showPrimaryCareOptions(triggerButton) {
@@ -864,7 +927,7 @@ async function showPrimaryCareOptions(triggerButton) {
   container.innerHTML = '<div class="loading-spinner-wrap"><div class="spinner"></div></div>';
   try {
     const providers = await request('/api/providers?type=PRIMARY_CARE');
-    container.innerHTML = renderProviderOptionsOrEmptyState(providers);
+    container.innerHTML = renderProviderOptionsOrEmptyState(providers, 'PRIMARY_CARE');
   } catch (error) {
     container.innerHTML = `<div class="notice emergency">Unable to load primary care options: ${escapeHtml(error.message)}</div>`;
   }
@@ -2241,6 +2304,12 @@ function bindEvents() {
       if (action === 'start-telehealth') startSimulatedTelehealth();
       if (action === 'show-primary-care') showPrimaryCareOptions(pathwayAction);
       if (action === 'return-to-recommendation') returnToCareRecommendation();
+    }
+
+    const selectProviderBtn = event.target.closest('[data-select-provider-id]');
+    if (selectProviderBtn) {
+      event.preventDefault();
+      selectRecommendedProvider(selectProviderBtn);
     }
 
     if (event.target.closest('[data-close-panel]') || event.target === $('#panel-backdrop')) {

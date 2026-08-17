@@ -799,6 +799,12 @@ textarea.input-control {
   gap: 14px;
   background: #ffffff;
 }
+.provider-option-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .provider-option-item.recommended-option {
   border-color: var(--teal);
   box-shadow: 0 0 0 1px var(--teal);
