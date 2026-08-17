@@ -388,31 +388,17 @@
             <div class="stat-card skeleton-stat"></div>
           </div>
 
-          <div class="two-column dashboard-grid">
-            <!-- Prioritization Queue Table / List -->
-            <div class="card">
-              <div class="card-header flex-between">
-                <div>
-                  <p class="eyebrow">Clinical Queue</p>
-                  <h2>Prioritization Queue</h2>
-                </div>
-                <button class="text-button" data-route="cohort">View All Cohort &rarr;</button>
+          <!-- Prioritization Queue Table / List -->
+          <div class="card">
+            <div class="card-header flex-between">
+              <div>
+                <p class="eyebrow">Clinical Queue</p>
+                <h2>Prioritization Queue</h2>
               </div>
-              <div id="priority-list" class="member-queue-list">
-                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
-              </div>
+              <button class="text-button" data-route="cohort">View All Cohort &rarr;</button>
             </div>
-
-            <!-- Historical Time of Day Signals -->
-            <div class="card">
-              <div class="card-header">
-                <p class="eyebrow">Care Access Patterns</p>
-                <h2>Historical Time of Day Signal</h2>
-              </div>
-              <div id="time-pattern" class="bar-chart-container">
-                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
-              </div>
-              <p class="muted caption-note">Time patterns illustrate historical ED access peaks; they do not dictate emergency necessity for current symptoms.</p>
+            <div id="priority-list" class="member-queue-list">
+              <div class="loading-spinner-wrap"><div class="spinner"></div></div>
             </div>
           </div>
 
@@ -421,23 +407,35 @@
             <div class="card-header">
               <p class="eyebrow">Decision Support</p>
               <h2>Risk &times; Anomaly Priority Matrix</h2>
-              <p class="muted">Cross-tabulates the historical high-utilization risk category against Isolation Forest anomaly status. Anomaly means an unusual utilization pattern, not a clinical diagnosis.</p>
+              <p class="muted">Cross-tabulates the historical high-utilization risk category against Isolation Forest anomaly status. Model-based utilization signal, not a clinical diagnosis.</p>
             </div>
             <div id="priority-matrix" class="priority-matrix-grid">
               <div class="loading-spinner-wrap"><div class="spinner"></div></div>
             </div>
           </div>
 
-          <!-- RightPath Intelligence: real, database-backed patient-app activity
-               (triage_encounters / navigation_actions). Additive to, and kept
-               visually/conceptually separate from, the CMS/member analytics above. -->
+          <!-- RIGHTPATH PROGRAM: unified activity + potential-impact section.
+               Real, database-backed patient-app activity (triage_encounters /
+               navigation_actions) from GET /api/payer/analytics/rightpath.
+               Additive to, and kept visually/conceptually separate from, the
+               CMS/member analytics above. No causal "prevented" or "saved"
+               claim is made anywhere in this section. -->
           <div class="card-header" style="margin-top: 32px;">
-            <p class="eyebrow">RightPath Activity</p>
-            <h2>RightPath Intelligence</h2>
-            <p class="muted">Real counts of triage assessments and care-navigation actions recorded through the RightPath patient app. Separate from the CMS/member population analytics above.</p>
+            <p class="eyebrow">RightPath Program</p>
+            <h2>RightPath Program Activity &amp; Impact</h2>
+            <p class="muted">Population-level activity from the patient portal and its potential utilization opportunity. Recommendations are distinct from confirmed navigation actions.</p>
           </div>
-          <div id="rightpath-stat-grid" class="stat-grid-container">
+
+          <p class="eyebrow" style="margin: 0 0 10px 0;">Activity</p>
+          <div id="rightpath-activity-stat-grid" class="stat-grid-container">
             <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+          </div>
+
+          <p class="eyebrow" style="margin: 20px 0 10px 0;">Potential Impact</p>
+          <div id="rightpath-impact-stat-grid" class="stat-grid-container">
             <div class="stat-card skeleton-stat"></div>
             <div class="stat-card skeleton-stat"></div>
           </div>
@@ -453,9 +451,9 @@
             </div>
             <div class="card">
               <div class="card-header">
-                <p class="eyebrow">Patient Choice</p>
-                <h2>Selected Care Pathway Distribution</h2>
-                <p class="muted">The care pathway patients actually selected or acted on.</p>
+                <p class="eyebrow">Confirmed Navigation</p>
+                <h2>Confirmed Care Pathway Distribution</h2>
+                <p class="muted">Care pathways patients actually selected or booked -- distinct from the recommendation above.</p>
               </div>
               <div id="rightpath-pathway-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-pathway"></canvas></div>
             </div>
@@ -463,11 +461,19 @@
 
           <div class="card" style="margin-top: 20px;">
             <div class="card-header">
-              <p class="eyebrow">Daily Volume</p>
-              <h2>RightPath Activity Trend</h2>
-              <p class="muted">Daily count of triage assessments recorded through RightPath.</p>
+              <p id="rightpath-trend-eyebrow" class="eyebrow">Daily Volume</p>
+              <h2 id="rightpath-trend-heading">RightPath Activity Trend</h2>
+              <p id="rightpath-trend-desc" class="muted">Daily count of triage assessments recorded through RightPath.</p>
             </div>
-            <div id="rightpath-trend-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-trend"></canvas></div>
+            <div id="rightpath-trend-content" class="chart-canvas-wrap"><canvas id="chart-rightpath-trend"></canvas></div>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+              <p class="eyebrow">Methodology</p>
+              <h2>How Potential Cost Opportunity Is Calculated</h2>
+            </div>
+            <div id="rightpath-impact-methodology"></div>
           </div>
         </section>
 
@@ -477,7 +483,7 @@
             <div>
               <p class="eyebrow">Payer Intelligence</p>
               <h1>Priority Members</h1>
-              <p class="subtitle">Complete database-backed Medicare cohort with ML risk stratification, prioritized by utilization risk.</p>
+              <p class="subtitle">Complete database-backed Medicare cohort. Members prioritized using utilization and anomaly signals -- not a clinical diagnosis.</p>
             </div>
           </div>
 
@@ -575,7 +581,7 @@
             <div>
               <p class="eyebrow">Payer Intelligence</p>
               <h1>Interventions</h1>
-              <p class="subtitle">Recommended care-navigation actions for prioritized members, generated from historical utilization and ML risk signals.</p>
+              <p class="subtitle">Care-management recommendations informed by historical utilization and ML risk signals -- the workflow, not the model, determines the intervention.</p>
             </div>
           </div>
           <div id="interventions-content">
@@ -611,8 +617,16 @@
               <div class="empty-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
               </div>
-              <h3>AI assistant integration pending</h3>
-              <p>AI knowledge layer: <strong>Gemini API + Pinecone RAG</strong>.<br />This assistant will answer natural-language questions grounded in this workspace's real utilization, risk, and intervention data. It has not been connected yet — this page is a placeholder entry point only.</p>
+              <h3>Payer Intelligence Assistant</h3>
+              <p class="muted" style="margin-bottom: 4px;">Ask questions about:</p>
+              <ul style="text-align: left; display: inline-block; margin: 0 0 14px 0; color: var(--muted); font-size: 14px; line-height: 1.7;">
+                <li>utilization patterns</li>
+                <li>high-priority members</li>
+                <li>ML utilization signals</li>
+                <li>care-management opportunities</li>
+                <li>program outcomes</li>
+              </ul>
+              <p><strong>Gemini + Pinecone RAG integration pending.</strong></p>
             </div>
           </div>
         </section>

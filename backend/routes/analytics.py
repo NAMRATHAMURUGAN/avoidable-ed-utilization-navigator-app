@@ -33,9 +33,12 @@ def get_analytics():
 @role_required("PAYER")
 def get_rightpath_analytics():
     """GET /api/payer/analytics/rightpath - Return aggregate RightPath
-    (patient-app) activity analytics: assessment/acuity/pathway counts and
-    a daily activity trend, derived from triage_encounters and
-    navigation_actions. Aggregate counts only -- never raw complaint text,
-    action details, or patient-identifying fields."""
+    (patient-app) activity analytics: assessment/acuity/pathway counts, a
+    daily activity trend, and RightPath Impact metrics (confirmed non-ED
+    navigation actions and an illustrative potential-ED-cost-opportunity
+    estimate derived from the real CMS population ED-cost baseline),
+    derived from triage_encounters, navigation_actions, and
+    member_utilization_snapshots. Aggregate counts only -- never raw
+    complaint text, action details, or patient-identifying fields."""
     data = analytics_service.get_rightpath_analytics()
     return jsonify(data)

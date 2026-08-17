@@ -38,7 +38,7 @@ const state = {
   cohortPage: 1,
 };
 
-// RightPath brand palette (matches public/styles.css :root custom properties)
+// RightPath brand palette (matches frontend/styles.css :root custom properties)
 // so Chart.js visuals stay on-brand without a build step.
 const BRAND_COLORS = {
   deep: '#123047',
@@ -314,15 +314,16 @@ function renderSidebarNav(role) {
       </button>
       <button data-route="cost-reduction" class="nav-item ${state.activeRoute === 'cost-reduction' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        <span>Cost Reduction</span>
+        <span>Cost &amp; Outcomes</span>
       </button>
+      <div class="sidebar-section-title" style="margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line);">More</div>
       <button data-route="assistant" class="nav-item ${state.activeRoute === 'assistant' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
-        <span>Payer Intelligence Assistant</span>
+        <span>Payer Intelligence</span>
       </button>
       <button data-route="history" class="nav-item ${state.activeRoute === 'history' ? 'active' : ''}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span>Population Audit Trail</span>
+        <span>Audit Trail</span>
       </button>
     `;
   }
@@ -1069,8 +1070,8 @@ async function loadPatientHistory(patientId) {
     if (!data.encounters || data.encounters.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <h3>No History Found</h3>
-          <p>No triage encounters have been recorded yet for beneficiary ${escapeHtml(data.beneficiaryId || patientId)}.</p>
+          <h3>No RightPath activity recorded for this member.</h3>
+          <p>No triage encounters have been recorded yet for beneficiary ${escapeHtml(data.beneficiaryId || patientId)}. This means the member has no recorded patient-portal activity, not that the database is unavailable.</p>
         </div>
       `;
       return;
@@ -1150,8 +1151,8 @@ async function renderDashboard() {
     ['ED Utilization', formatNumber(a.totalEdVisits), '12-Month ED Visit Count'],
     ['ED Spend', formatMoney(a.totalEdSpend), '12-Month Emergency Department Spend'],
     Number.isFinite(highRiskCount)
-      ? ['High-Risk Members', formatNumber(highRiskCount), 'Composite: high-utilization prediction or utilization anomaly']
-      : ['High-Risk Members', 'N/A', 'Priority matrix data unavailable'],
+      ? ['Members with Risk Signals', formatNumber(highRiskCount), 'Composite: high-utilization prediction or utilization anomaly -- model-based signal, not a clinical diagnosis']
+      : ['Members with Risk Signals', 'N/A', 'Priority matrix data unavailable'],
     Number.isFinite(a.highUtilizationMemberCount)
       ? ['High-Utilization Members', formatNumber(a.highUtilizationMemberCount), 'XGBoost historical high-utilization prediction']
       : ['High-Utilization Members', 'N/A', 'XGBoost prediction data unavailable'],
@@ -1199,31 +1200,7 @@ async function renderDashboard() {
     priorityList.innerHTML = `<div class="notice emergency">Unable to load the prioritization queue: ${escapeHtml(error.message)}</div>`;
   }
 
-  // Time pattern chart
-  if (a.timeOfDayPattern && a.timeOfDayPattern.length > 0) {
-    const maxVal = Math.max(...a.timeOfDayPattern.map(item => item.count), 1);
-    $('#time-pattern').innerHTML = a.timeOfDayPattern.map(item => `
-      <div class="bar-row">
-        <span>${escapeHtml(item.timeSlot)}</span>
-        <div class="bar-track">
-          <div class="bar-fill" style="width: ${(item.count / maxVal) * 100}%"></div>
-        </div>
-        <strong>${item.count}</strong>
-      </div>
-    `).join('');
-  } else {
-    $('#time-pattern').innerHTML = `
-      <div class="empty-state" style="padding: 24px 12px;">
-        <div class="empty-icon" style="width: 48px; height: 48px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </div>
-        <h3 style="font-size: 15px;">Time-of-day signal pending</h3>
-        <p>This view requires claims-level visit timestamps not yet available in the ingested dataset.</p>
-      </div>
-    `;
-  }
-
-  // RightPath Intelligence: real, database-backed patient-app activity
+  // RightPath Program: real, database-backed patient-app activity
   // (triage_encounters / navigation_actions), fetched separately from and
   // never merged into the CMS/member analytics above.
   if (!state.rightpathAnalyticsLoaded) {
@@ -1234,42 +1211,67 @@ async function renderDashboard() {
       console.error('Failed to load RightPath analytics:', error);
     }
   }
-  renderRightPathIntelligence(state.rightpathAnalytics);
+  renderRightPathProgram(state.rightpathAnalytics);
 }
 
 /**
- * RIGHTPATH INTELLIGENCE (Command Center)
- * Real, database-backed RightPath patient-app activity from GET
- * /api/payer/analytics/rightpath (aggregate counts only -- see
- * analytics_service.get_rightpath_analytics). Additive to, and kept
- * separate from, the CMS/member population analytics above.
+ * RIGHTPATH PROGRAM (Command Center)
+ * Unified activity + potential-impact section, real database-backed
+ * RightPath patient-app activity from GET /api/payer/analytics/rightpath
+ * (aggregate counts only -- see analytics_service.get_rightpath_analytics).
+ * Additive to, and kept separate from, the CMS/member population analytics
+ * above. GROUP A (Activity) and GROUP B (Potential Impact) each show a
+ * metric exactly once -- no field is duplicated across the two groups. No
+ * causal "prevented" or "saved" claim is made anywhere in this section.
  */
-function renderRightPathIntelligence(data) {
-  const statGrid = $('#rightpath-stat-grid');
-  if (!statGrid) return;
+function renderRightPathProgram(data) {
+  const activityGrid = $('#rightpath-activity-stat-grid');
+  const impactGrid = $('#rightpath-impact-stat-grid');
+  if (!activityGrid || !impactGrid) return;
 
   if (!data) {
-    statGrid.innerHTML = '<div class="empty-state" style="padding: 20px 12px;"><p>Unable to load RightPath activity data.</p></div>';
+    activityGrid.innerHTML = '<div class="empty-state" style="padding: 20px 12px;"><p>Unable to load RightPath activity data.</p></div>';
+    impactGrid.innerHTML = '';
     return;
   }
 
-  statGrid.innerHTML = [
-    ['Total RightPath Users', formatNumber(data.totalRightPathUsers), 'Distinct authenticated patients who completed an assessment'],
-    ['Total Assessments', formatNumber(data.totalAssessments), 'Triage assessments recorded'],
+  // GROUP A -- ACTIVITY
+  activityGrid.innerHTML = [
+    ['RightPath Assessments', formatNumber(data.totalRightPathAssessments),
+      `Triage assessments recorded, across ${formatNumber(data.totalRightPathUsers)} distinct authenticated patient${data.totalRightPathUsers === 1 ? '' : 's'}`],
     ['Emergency Assessments', formatNumber(data.emergencyAssessments), 'Flagged by the deterministic safety engine'],
-    ['Non-Emergency Assessments', formatNumber(data.nonEmergencyAssessments), 'Routed to lower-acuity care'],
-    ['Navigation Actions', formatNumber(data.navigationActions), 'Care pathways recorded'],
+    ['Non-Emergency Recommendations', formatNumber(data.nonEmergencyRecommendations), 'Assessments that recommended a non-emergency care setting'],
+    ['Confirmed Non-ED Navigation', formatNumber(data.confirmedNonEdNavigationActions), 'Patients who actually selected or booked a non-ED pathway'],
   ].map(([label, val, detail]) => `
     <div class="stat-card">
-      <div class="stat-label">${label}</div>
-      <div class="stat-value">${val}</div>
-      <div class="stat-detail">${detail}</div>
+      <div class="stat-label">${escapeHtml(label)}</div>
+      <div class="stat-value">${escapeHtml(String(val))}</div>
+      <div class="stat-detail">${escapeHtml(detail)}</div>
+    </div>
+  `).join('');
+
+  // GROUP B -- POTENTIAL IMPACT
+  const hasCostBaseline = Number.isFinite(data.averageEdClaimCost);
+  const costOpportunityValue = hasCostBaseline ? formatMoney(data.potentialEdCostOpportunity) : 'Not yet estimable';
+  const costOpportunityDetail = hasCostBaseline
+    ? `Illustrative estimate using the observed average ED claim cost from the CMS population. Not measured savings.`
+    : 'Requires at least one CMS-recorded ED visit to compute a baseline';
+
+  impactGrid.innerHTML = [
+    ['Potential ED Utilization Opportunity', formatNumber(data.potentialEdUtilizationOpportunities), 'Equal to confirmed non-ED navigation actions, not every recommendation'],
+    ['Estimated Potential Cost Opportunity', costOpportunityValue, costOpportunityDetail],
+  ].map(([label, val, detail]) => `
+    <div class="stat-card">
+      <div class="stat-label">${escapeHtml(label)}</div>
+      <div class="stat-value">${escapeHtml(String(val))}</div>
+      <div class="stat-detail">${escapeHtml(detail)}</div>
     </div>
   `).join('');
 
   renderRightPathAcuityChart(data.acuityDistribution);
-  renderRightPathPathwayChart(data.pathwayDistribution);
-  renderRightPathTrendChart(data.activityTrend);
+  renderRightPathConfirmedPathwayChart(data);
+  renderRightPathActivityTrendSection(data.activityTrend);
+  renderRightPathImpactMethodology(data);
 }
 
 function renderRightPathAcuityChart(distribution) {
@@ -1299,20 +1301,56 @@ function renderRightPathAcuityChart(distribution) {
   });
 }
 
-function renderRightPathPathwayChart(distribution) {
-  const el = document.getElementById('chart-rightpath-pathway');
-  if (!distribution || distribution.length === 0) {
-    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath activity yet.</p>';
+/**
+ * Confirmed care-pathway distribution -- the ONE chart for what patients
+ * actually navigated to (consolidates what were previously two separate,
+ * duplicative pathway charts). Built from the four named navigation-count
+ * fields rather than the raw pathwayDistribution array so it always shows
+ * exactly the four recognized pathways (never an "Unknown" bucket).
+ *
+ * A bar chart with only one non-zero category is not analytically useful,
+ * so with fewer than two non-zero pathways this renders a short compact
+ * sentence instead of a near-empty chart.
+ */
+function renderRightPathConfirmedPathwayChart(data) {
+  const wrap = $('#rightpath-pathway-chart-wrap');
+  const segments = [
+    ['Telehealth', data.telehealthNavigations || 0],
+    ['Primary Care', data.primaryCareNavigations || 0],
+    ['Urgent Care', data.urgentCareNavigations || 0],
+    ['Emergency', data.emergencyNavigations || 0],
+  ];
+  const nonZero = segments.filter(([, count]) => count > 0);
+
+  if (nonZero.length === 0) {
+    if (wrap) wrap.innerHTML = '<p class="muted">No confirmed navigation activity yet.</p>';
     return;
+  }
+
+  if (nonZero.length < 2) {
+    const [label, count] = nonZero[0];
+    if (wrap) {
+      wrap.innerHTML = `
+        <div class="empty-state" style="padding: 20px 12px;">
+          <p><strong>${count} ${escapeHtml(label)} navigation action${count === 1 ? '' : 's'} recorded.</strong></p>
+          <p class="muted">Additional pathway distribution will appear as more confirmed navigation activity is recorded.</p>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  if (!wrap?.querySelector('canvas')) {
+    if (wrap) wrap.innerHTML = '<canvas id="chart-rightpath-pathway"></canvas>';
   }
   renderChartJs('chart-rightpath-pathway', {
     type: 'bar',
     data: {
-      labels: distribution.map(row => (row.pathway || 'Unknown').replace(/_/g, ' ')),
+      labels: segments.map(([label]) => label),
       datasets: [{
-        label: 'Navigation actions',
-        data: distribution.map(row => row.count),
-        backgroundColor: BRAND_COLORS.coral,
+        label: 'Confirmed navigation actions',
+        data: segments.map(([, count]) => count),
+        backgroundColor: [BRAND_COLORS.teal, BRAND_COLORS.tealLight, BRAND_COLORS.amber, BRAND_COLORS.coral],
         borderRadius: 4,
       }],
     },
@@ -1326,11 +1364,48 @@ function renderRightPathPathwayChart(distribution) {
   });
 }
 
-function renderRightPathTrendChart(trend) {
-  const el = document.getElementById('chart-rightpath-trend');
+/**
+ * A one-point time series is not a meaningful trend line. With exactly one
+ * date, this renders a compact summary sentence instead ("RightPath
+ * Activity" heading); with 2+ dates it renders the real trend line chart
+ * ("RightPath Activity Trend" heading), unchanged. Never fabricates missing
+ * dates or interpolates between the ones that exist.
+ */
+function renderRightPathActivityTrendSection(trend) {
+  const eyebrowEl = $('#rightpath-trend-eyebrow');
+  const headingEl = $('#rightpath-trend-heading');
+  const descEl = $('#rightpath-trend-desc');
+  const contentEl = $('#rightpath-trend-content');
+  if (!contentEl) return;
+
   if (!trend || trend.length === 0) {
-    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath activity yet.</p>';
+    if (eyebrowEl) eyebrowEl.textContent = 'Daily Volume';
+    if (headingEl) headingEl.textContent = 'RightPath Activity Trend';
+    if (descEl) descEl.textContent = 'Daily count of triage assessments recorded through RightPath.';
+    contentEl.innerHTML = '<p class="muted">No RightPath activity yet.</p>';
     return;
+  }
+
+  if (trend.length === 1) {
+    const [{ date, count }] = trend;
+    const formattedDate = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (eyebrowEl) eyebrowEl.textContent = 'Daily Volume';
+    if (headingEl) headingEl.textContent = 'RightPath Activity';
+    if (descEl) descEl.textContent = 'A single day of recorded activity is not yet a meaningful trend.';
+    contentEl.innerHTML = `
+      <div class="empty-state" style="padding: 20px 12px;">
+        <p><strong>${formatNumber(count)} assessment${count === 1 ? '' : 's'} recorded on ${formattedDate}.</strong></p>
+        <p class="muted">A trend line will appear once activity has been recorded across multiple days.</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (eyebrowEl) eyebrowEl.textContent = 'Daily Volume';
+  if (headingEl) headingEl.textContent = 'RightPath Activity Trend';
+  if (descEl) descEl.textContent = 'Daily count of triage assessments recorded through RightPath.';
+  if (!contentEl.querySelector('canvas')) {
+    contentEl.innerHTML = '<canvas id="chart-rightpath-trend"></canvas>';
   }
   renderChartJs('chart-rightpath-trend', {
     type: 'line',
@@ -1353,6 +1428,19 @@ function renderRightPathTrendChart(trend) {
       scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
     },
   });
+}
+
+function renderRightPathImpactMethodology(data) {
+  const container = $('#rightpath-impact-methodology');
+  if (!container) return;
+  const baseline = data.costOpportunityMethodology?.baseline || 'CMS population average ED claim cost';
+  container.innerHTML = `
+    <div class="rationale-box">
+      <strong>Confirmed non-ED navigation actions &times; CMS average ED claim cost = Estimated potential cost opportunity</strong>
+      <p class="muted" style="margin: 6px 0 0 0;">Baseline: ${escapeHtml(baseline)}.</p>
+    </div>
+    <p class="muted caption-note">Illustrative population-level estimate. A navigation action is not proof that an ED visit was prevented, and this does not represent confirmed savings.</p>
+  `;
 }
 
 /**
@@ -1600,23 +1688,12 @@ async function renderUtilizationInsights() {
     <div class="chart-grid">
       <div class="card">
         <div class="card-header">
-          <p class="eyebrow">Care-Navigation Activity</p>
-          <h2>RightPath Utilization Trend</h2>
-          <p class="muted">Daily volume of triage assessments actually recorded through RightPath (not a CMS-claims ED-visit trend -- the ingested claims dataset has no per-visit dates).</p>
-        </div>
-        <div class="chart-canvas-wrap"><canvas id="chart-utilization-trend"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-header">
           <p class="eyebrow">Population Distribution</p>
           <h2>ED Utilization Bands</h2>
           <p class="muted">How concentrated ED utilization is across the member population.</p>
         </div>
         <div class="chart-canvas-wrap"><canvas id="chart-utilization-distribution"></canvas></div>
       </div>
-    </div>
-
-    <div class="chart-grid">
       <div class="card">
         <div class="card-header">
           <p class="eyebrow">Model-Based Utilization Risk</p>
@@ -1625,11 +1702,14 @@ async function renderUtilizationInsights() {
         </div>
         <div class="chart-canvas-wrap"><canvas id="chart-risk-distribution"></canvas></div>
       </div>
+    </div>
+
+    <div class="chart-grid single-column">
       <div class="card">
         <div class="card-header">
           <p class="eyebrow">Isolation Forest</p>
           <h2>Anomaly Analysis</h2>
-          <p class="muted">Average anomaly score by ED-visit count, aggregated (never per-member) into anomalous vs. normal groups. Anomaly = unusual utilization pattern, not clinical risk.</p>
+          <p class="muted">Average anomaly score by ED-visit count, aggregated (never per-member) into anomalous vs. normal groups. Anomaly = unusual utilization pattern, not a clinical diagnosis.</p>
         </div>
         <div class="chart-canvas-wrap"><canvas id="chart-anomaly-scatter"></canvas></div>
       </div>
@@ -1637,9 +1717,9 @@ async function renderUtilizationInsights() {
 
     <div class="card">
       <div class="card-header">
-        <p class="eyebrow">ML Utilization-Pattern Analysis</p>
+        <p class="eyebrow">Combined Utilization Signals</p>
         <h2>High-Utilization Prediction &times; Anomaly Detection Overlap</h2>
-        <p class="muted">Each member is classified by two independent models: XGBoost's historical high-utilization prediction and Isolation Forest's unsupervised anomaly detection.</p>
+        <p class="muted">Each member is classified by two independent models: XGBoost's historical high-utilization prediction and Isolation Forest's unsupervised anomaly detection. Combined utilization signals, not a medical diagnosis.</p>
       </div>
       <div class="bar-chart-container">
         ${segments.map(([label, count]) => `
@@ -1654,39 +1734,9 @@ async function renderUtilizationInsights() {
     </div>
   `;
 
-  renderUtilizationTrendChart(a.utilizationTrend);
   renderUtilizationDistributionChart(a.utilizationDistribution);
   renderRiskDistributionChart(a.riskDistribution);
   renderAnomalyScatterChart(a.anomalyScatterBins);
-}
-
-function renderUtilizationTrendChart(trend) {
-  if (!trend || trend.length === 0) {
-    const el = document.getElementById('chart-utilization-trend');
-    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath triage activity has been recorded yet.</p>';
-    return;
-  }
-  renderChartJs('chart-utilization-trend', {
-    type: 'line',
-    data: {
-      labels: trend.map(row => row.date),
-      datasets: [{
-        label: 'Triage assessments recorded',
-        data: trend.map(row => row.encounterCount),
-        borderColor: BRAND_COLORS.teal,
-        backgroundColor: 'rgba(8, 124, 117, 0.12)',
-        fill: true,
-        tension: 0.25,
-        pointRadius: 3,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-    },
-  });
 }
 
 function renderUtilizationDistributionChart(distribution) {
@@ -1892,7 +1942,7 @@ async function renderInterventions() {
       <div class="card-header">
         <p class="eyebrow">Recommended Actions</p>
         <h2>High-Priority Member Interventions</h2>
-        <p class="muted">Generated per member from historical utilization, XGBoost high-utilization prediction, and Isolation Forest anomaly detection.</p>
+        <p class="muted">Care-management recommendations informed by historical utilization and ML risk signals -- the workflow, not the model, determines the intervention.</p>
       </div>
       <div class="member-queue-list">
         ${state.interventions.map(({ patient, data }) => {
@@ -2049,19 +2099,24 @@ function renderCostByBandChart(costByBand, metric) {
   });
 }
 
+/**
+ * Categorical bar chart, not a continuous scatter/line: "0", "1", "2-3",
+ * "4-5", "6+" are utilization BANDS, not numeric x-values, and "6+" has no
+ * true numeric midpoint. Plotting it as a point on a continuous axis (the
+ * previous implementation used x=7 for "6+") misrepresents an open-ended
+ * category as a specific number. A categorical x-axis avoids that entirely.
+ */
 function renderUtilizationVsCostChart(costByBand) {
   if (!costByBand || costByBand.length === 0) return;
-  const bandMidpoint = { '0': 0, '1': 1, '2-3': 2.5, '4-5': 4.5, '6+': 7 };
   renderChartJs('chart-utilization-vs-cost', {
-    type: 'scatter',
+    type: 'bar',
     data: {
+      labels: costByBand.map(row => row.band),
       datasets: [{
-        label: 'Utilization band average cost',
-        data: costByBand.map(row => ({ x: bandMidpoint[row.band] ?? 0, y: row.averageEdSpend, band: row.band, count: row.memberCount })),
+        label: 'Average ED spend',
+        data: costByBand.map(row => row.averageEdSpend),
         backgroundColor: BRAND_COLORS.teal,
-        pointRadius: 7,
-        showLine: true,
-        borderColor: 'rgba(8, 124, 117, 0.35)',
+        borderRadius: 4,
       }],
     },
     options: {
@@ -2070,12 +2125,15 @@ function renderUtilizationVsCostChart(costByBand) {
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: {
-          label: ctx => `${ctx.raw.band} ED visits: ${formatMoney(ctx.raw.y)} average (${formatNumber(ctx.raw.count)} members)`,
+          label: ctx => {
+            const row = costByBand[ctx.dataIndex];
+            return `${row.band} ED visits: ${formatMoney(ctx.parsed.y)} average (${formatNumber(row.memberCount)} members)`;
+          },
         } },
       },
       scales: {
-        x: { title: { display: true, text: 'ED Visit Count (band midpoint)' } },
-        y: { title: { display: true, text: 'Average ED Spend' }, ticks: { callback: v => formatMoney(v) } },
+        x: { title: { display: true, text: 'ED Visit Count (band)' } },
+        y: { title: { display: true, text: 'Average ED Spend' }, beginAtZero: true, ticks: { callback: v => formatMoney(v) } },
       },
     },
   });

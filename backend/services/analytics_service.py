@@ -299,6 +299,37 @@ def _rightpath_activity_trend(session: Session) -> list[dict[str, Any]]:
     return [{"date": str(day_value), "count": int(count)} for day_value, count in rows]
 
 
+def _rightpath_navigation_counts_by_acuity(session: Session) -> dict[str, int]:
+    rows = session.execute(
+        select(NavigationAction.selected_acuity, func.count(NavigationAction.id))
+        .where(NavigationAction.selected_acuity.is_not(None))
+        .group_by(NavigationAction.selected_acuity)
+    ).all()
+    return {acuity: int(count) for acuity, count in rows}
+
+
+def _average_ed_claim_cost(session: Session) -> float | None:
+    """CMS population-level average ED claim cost, derived at query time from
+    the real, claims-ingested member_utilization_snapshots aggregate (see
+    scratch/build_full_utilization_features.py: total_ed_related_cost is a
+    real sum of CLM_PMT_AMT for ED-flagged claims). Never a hardcoded
+    constant -- returns None (not 0 or a fabricated figure) if the CMS
+    population currently has zero recorded ED visits, since a per-visit
+    average is undefined in that case."""
+    total_ed_visits = (
+        session.scalar(select(func.coalesce(func.sum(MemberUtilizationSnapshot.ed_visit_count), 0))) or 0
+    )
+    if total_ed_visits <= 0:
+        return None
+    total_ed_spend = (
+        session.scalar(
+            select(func.coalesce(func.sum(MemberUtilizationSnapshot.total_ed_related_cost), 0))
+        )
+        or 0.0
+    )
+    return float(total_ed_spend) / total_ed_visits
+
+
 def _execute_get_rightpath_analytics(session: Session) -> dict[str, Any]:
     # Only authenticated-user encounters count as a "RightPath user" --
     # anonymous (user_id IS NULL) encounters are still counted in
@@ -326,6 +357,44 @@ def _execute_get_rightpath_analytics(session: Session) -> dict[str, Any]:
     )
     navigation_actions_count = session.scalar(select(func.count(NavigationAction.id))) or 0
 
+    # Non-emergency recommendations, defined directly off recommended_acuity
+    # (rather than reusing non_emergency_assessments' is_emergency column)
+    # per the RightPath Impact metric spec -- numerically identical today
+    # since is_emergency is set True iff recommended_acuity == "EMERGENCY",
+    # but this keeps the Impact metrics traceable to the acuity field itself.
+    non_emergency_recommendations = (
+        session.scalar(
+            select(func.count(TriageEncounter.id)).where(TriageEncounter.recommended_acuity != "EMERGENCY")
+        )
+        or 0
+    )
+
+    nav_counts = _rightpath_navigation_counts_by_acuity(session)
+    telehealth_navigations = nav_counts.get("TELEHEALTH", 0)
+    primary_care_navigations = nav_counts.get("PRIMARY_CARE", 0)
+    urgent_care_navigations = nav_counts.get("URGENT_CARE", 0)
+    emergency_navigations = nav_counts.get("EMERGENCY", 0)
+    # "Confirmed non-ED" = every recorded navigation action whose selected
+    # pathway is not EMERGENCY -- not limited to the three named categories
+    # above, so it stays correct if VALID_ACUITIES ever gains another
+    # non-ED value (e.g. RETAIL_CLINIC) that isn't explicitly named here.
+    confirmed_non_ed_navigation_actions = sum(
+        count for acuity, count in nav_counts.items() if acuity != "EMERGENCY"
+    )
+
+    # First implementation, per product direction: the opportunity count is
+    # exactly the confirmed non-ED navigation actions -- never every
+    # non-emergency recommendation, since a recommendation alone is not
+    # evidence the patient actually navigated away from the ED.
+    potential_ed_utilization_opportunities = confirmed_non_ed_navigation_actions
+
+    average_ed_claim_cost = _average_ed_claim_cost(session)
+    potential_ed_cost_opportunity = (
+        potential_ed_utilization_opportunities * average_ed_claim_cost
+        if average_ed_claim_cost is not None
+        else None
+    )
+
     return {
         "totalRightPathUsers": int(total_users),
         "totalAssessments": int(total_assessments),
@@ -335,6 +404,22 @@ def _execute_get_rightpath_analytics(session: Session) -> dict[str, Any]:
         "navigationActions": int(navigation_actions_count),
         "pathwayDistribution": _rightpath_pathway_distribution(session),
         "activityTrend": _rightpath_activity_trend(session),
+        # -- RightPath Impact metrics (additive) --
+        "totalRightPathAssessments": int(total_assessments),
+        "nonEmergencyRecommendations": int(non_emergency_recommendations),
+        "confirmedNonEdNavigationActions": int(confirmed_non_ed_navigation_actions),
+        "telehealthNavigations": int(telehealth_navigations),
+        "primaryCareNavigations": int(primary_care_navigations),
+        "urgentCareNavigations": int(urgent_care_navigations),
+        "emergencyNavigations": int(emergency_navigations),
+        "potentialEdUtilizationOpportunities": int(potential_ed_utilization_opportunities),
+        "averageEdClaimCost": average_ed_claim_cost,
+        "potentialEdCostOpportunity": potential_ed_cost_opportunity,
+        "costOpportunityMethodology": {
+            "baseline": "CMS population average ED claim cost",
+            "formula": "confirmed non-ED navigation actions * average ED claim cost",
+            "causalClaim": False,
+        },
     }
 
 

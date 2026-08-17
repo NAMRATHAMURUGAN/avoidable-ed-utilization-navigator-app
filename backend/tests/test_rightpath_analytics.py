@@ -16,12 +16,26 @@ Every field asserted has a traceable, real-database source:
   navigationActions         -> COUNT navigation_actions
   pathwayDistribution       -> navigation_actions.selected_acuity
   activityTrend             -> triage_encounters.created_at (grouped by day)
+
+RightPath Impact metrics (added in this phase) are covered by
+RightPathImpactAnalyticsServiceTests / RightPathImpactAnalyticsRouteTests
+below:
+  totalRightPathAssessments          -> COUNT triage_encounters
+  nonEmergencyRecommendations        -> COUNT triage_encounters WHERE recommended_acuity != 'EMERGENCY'
+  confirmedNonEdNavigationActions    -> COUNT navigation_actions WHERE selected_acuity != 'EMERGENCY'
+  telehealthNavigations/primaryCareNavigations/urgentCareNavigations/emergencyNavigations
+                                      -> navigation_actions.selected_acuity, per value
+  potentialEdUtilizationOpportunities -> == confirmedNonEdNavigationActions (no causal claim)
+  averageEdClaimCost                 -> SUM(member_utilization_snapshots.total_ed_related_cost)
+                                         / SUM(member_utilization_snapshots.ed_visit_count)
+  potentialEdCostOpportunity         -> potentialEdUtilizationOpportunities * averageEdClaimCost
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
@@ -30,7 +44,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app import create_app
 from backend.database import Base
-from backend.models import NavigationAction, TriageEncounter
+from backend.models import Member, MemberUtilizationSnapshot, NavigationAction, TriageEncounter
 from backend.services.analytics_service import get_rightpath_analytics
 from backend.services.auth_service import register_user
 
@@ -167,6 +181,138 @@ class RightPathAnalyticsServiceTests(unittest.TestCase):
             self.assertNotIn(forbidden_key, data)
 
 
+def _snapshot(member_id: int, *, ed_visits: int, ed_cost: float) -> tuple[Member, MemberUtilizationSnapshot]:
+    member = Member(
+        id=member_id, bene_id=f"CMS-IMPACT-{member_id}", age=60, gender="Female",
+        dual_eligibility_months=0, chronic_condition_count=0,
+    )
+    snapshot = MemberUtilizationSnapshot(
+        id=member_id, member_id=member_id,
+        inpatient_visit_count=0, inpatient_total_cost=Decimal("0"),
+        outpatient_visit_count=0, outpatient_total_cost=Decimal("0"),
+        ed_visit_count=ed_visits, total_claim_payment_amount=Decimal("0"),
+        total_ed_related_cost=Decimal(str(ed_cost)), average_claim_cost=Decimal("0"),
+        provider_count=1,
+    )
+    return member, snapshot
+
+
+class RightPathImpactAnalyticsServiceTests(unittest.TestCase):
+    """Tests for the RightPath Impact fields added to get_rightpath_analytics()
+    in this phase: confirmed non-ED navigation counts, per-pathway navigation
+    counts, and the CMS-derived potential-ED-cost-opportunity estimate."""
+
+    def setUp(self) -> None:
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.session: Session = sessionmaker(
+            bind=self.engine, autoflush=False, expire_on_commit=False
+        )()
+
+    def tearDown(self) -> None:
+        self.session.close()
+        Base.metadata.drop_all(self.engine)
+        self.engine.dispose()
+
+    def _seed_encounters_and_actions(self) -> None:
+        encounters = [
+            _encounter(user_id=1, is_emergency=True, recommended_acuity="EMERGENCY",
+                       created_at=datetime(2026, 1, 1, tzinfo=timezone.utc), session_id="e1"),
+            _encounter(user_id=1, is_emergency=False, recommended_acuity="TELEHEALTH",
+                       created_at=datetime(2026, 1, 2, tzinfo=timezone.utc), session_id="e2"),
+            _encounter(user_id=2, is_emergency=False, recommended_acuity="URGENT_CARE",
+                       created_at=datetime(2026, 1, 3, tzinfo=timezone.utc), session_id="e3"),
+            _encounter(user_id=2, is_emergency=False, recommended_acuity="PRIMARY_CARE",
+                       created_at=datetime(2026, 1, 4, tzinfo=timezone.utc), session_id="e4"),
+            _encounter(user_id=3, is_emergency=False, recommended_acuity="TELEHEALTH",
+                       created_at=datetime(2026, 1, 5, tzinfo=timezone.utc), session_id="e5"),
+        ]
+        self.session.add_all(encounters)
+        self.session.commit()
+
+        actions = [
+            NavigationAction(user_id=1, action_type="APPOINTMENT_BOOKED", selected_acuity="TELEHEALTH",
+                              recorded_at=datetime.now(timezone.utc)),
+            NavigationAction(user_id=2, action_type="PROVIDER_SELECTED", selected_acuity="URGENT_CARE",
+                              recorded_at=datetime.now(timezone.utc)),
+            NavigationAction(user_id=2, action_type="PROVIDER_SELECTED", selected_acuity="PRIMARY_CARE",
+                              recorded_at=datetime.now(timezone.utc)),
+            # A navigation action explicitly recorded against EMERGENCY (schema
+            # permits it even though the current UI never offers this choice)
+            # must NOT be counted as a confirmed non-ED navigation.
+            NavigationAction(user_id=1, action_type="PROVIDER_SELECTED", selected_acuity="EMERGENCY",
+                              recorded_at=datetime.now(timezone.utc)),
+        ]
+        self.session.add_all(actions)
+        self.session.commit()
+
+    def test_totals_and_per_pathway_navigation_counts(self) -> None:
+        self._seed_encounters_and_actions()
+        data = get_rightpath_analytics(session=self.session)
+
+        self.assertEqual(data["totalRightPathAssessments"], 5)
+        self.assertEqual(data["nonEmergencyRecommendations"], 4)
+        self.assertEqual(data["telehealthNavigations"], 1)
+        self.assertEqual(data["primaryCareNavigations"], 1)
+        self.assertEqual(data["urgentCareNavigations"], 1)
+        self.assertEqual(data["emergencyNavigations"], 1)
+        # 3 non-ED actions (telehealth + urgent care + primary care); the
+        # EMERGENCY-selected action is excluded.
+        self.assertEqual(data["confirmedNonEdNavigationActions"], 3)
+        self.assertEqual(data["potentialEdUtilizationOpportunities"], 3)
+
+    def test_potential_ed_cost_opportunity_equals_opportunities_times_cms_average(self) -> None:
+        self._seed_encounters_and_actions()
+        member, snapshot = _snapshot(1, ed_visits=10, ed_cost=29473.10)  # avg = 2947.31/visit
+        self.session.add_all([member, snapshot])
+        self.session.commit()
+
+        data = get_rightpath_analytics(session=self.session)
+        self.assertAlmostEqual(data["averageEdClaimCost"], 2947.31, places=2)
+        self.assertEqual(data["potentialEdUtilizationOpportunities"], 3)
+        self.assertAlmostEqual(data["potentialEdCostOpportunity"], 3 * 2947.31, places=2)
+
+    def test_methodology_block_states_no_causal_claim(self) -> None:
+        data = get_rightpath_analytics(session=self.session)
+        self.assertEqual(data["costOpportunityMethodology"]["causalClaim"], False)
+        self.assertIn("confirmed non-ED navigation actions", data["costOpportunityMethodology"]["formula"])
+
+    def test_zero_cms_ed_visits_returns_none_not_fabricated_baseline(self) -> None:
+        """No member_utilization_snapshots rows at all -> a per-visit average
+        is undefined; must be None, never 0 or a hardcoded constant."""
+        self._seed_encounters_and_actions()
+        data = get_rightpath_analytics(session=self.session)
+        self.assertIsNone(data["averageEdClaimCost"])
+        self.assertIsNone(data["potentialEdCostOpportunity"])
+        # The opportunity *count* is still real and reported even though the
+        # dollar estimate cannot be computed.
+        self.assertEqual(data["potentialEdUtilizationOpportunities"], 3)
+
+    def test_zero_confirmed_navigation_actions_returns_honest_zero(self) -> None:
+        self.session.add(_encounter(
+            user_id=1, is_emergency=False, recommended_acuity="TELEHEALTH",
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc), session_id="only",
+        ))
+        member, snapshot = _snapshot(1, ed_visits=10, ed_cost=29473.10)
+        self.session.add_all([member, snapshot])
+        self.session.commit()
+
+        data = get_rightpath_analytics(session=self.session)
+        self.assertEqual(data["confirmedNonEdNavigationActions"], 0)
+        self.assertEqual(data["potentialEdUtilizationOpportunities"], 0)
+        self.assertEqual(data["potentialEdCostOpportunity"], 0)  # 0 opportunities x a real baseline is a real zero
+        self.assertIsNotNone(data["averageEdClaimCost"])
+
+    def test_response_contains_no_raw_patient_data(self) -> None:
+        self._seed_encounters_and_actions()
+        data = get_rightpath_analytics(session=self.session)
+        serialized = str(data)
+        for forbidden in ("chief_complaint", "test complaint text", "action_details", "session_id"):
+            self.assertNotIn(forbidden, serialized)
+        for forbidden_key in ("name", "email", "zip", "contact", "user_id", "member_id"):
+            self.assertNotIn(forbidden_key, data)
+
+
 class RightPathAnalyticsRouteTests(unittest.TestCase):
     """HTTP-level authorization + response-shape tests via the Flask test
     client, following the existing route-test convention (see
@@ -211,6 +357,35 @@ class RightPathAnalyticsRouteTests(unittest.TestCase):
             self.assertIn("acuityDistribution", data)
             self.assertIn("pathwayDistribution", data)
             self.assertIn("activityTrend", data)
+
+    def test_payer_can_access_impact_metrics_on_the_same_endpoint(self) -> None:
+        with patch("backend.services.auth_service.session_scope", self._mock_session_scope), \
+             patch("backend.services.analytics_service.session_scope", self._mock_session_scope):
+            self._register_and_login("rightpath-impact-payer@example.com", "PAYER")
+            response = self.client.get("/api/payer/analytics/rightpath")
+            self.assertEqual(response.status_code, 200)
+            data = response.get_json()
+            for field in (
+                "totalRightPathAssessments",
+                "nonEmergencyRecommendations",
+                "confirmedNonEdNavigationActions",
+                "telehealthNavigations",
+                "primaryCareNavigations",
+                "urgentCareNavigations",
+                "emergencyNavigations",
+                "potentialEdUtilizationOpportunities",
+                "averageEdClaimCost",
+                "potentialEdCostOpportunity",
+                "costOpportunityMethodology",
+            ):
+                self.assertIn(field, data)
+            self.assertEqual(data["costOpportunityMethodology"]["causalClaim"], False)
+
+    def test_patient_cannot_access_impact_endpoint(self) -> None:
+        with patch("backend.services.auth_service.session_scope", self._mock_session_scope):
+            self._register_and_login("rightpath-impact-patient@example.com", "PATIENT")
+            response = self.client.get("/api/payer/analytics/rightpath")
+            self.assertEqual(response.status_code, 403)
 
     def test_patient_cannot_access_endpoint(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope):

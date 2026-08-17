@@ -18,7 +18,7 @@ from backend.routes.triage import triage_blueprint
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_DIRECTORY = PROJECT_ROOT / "public"
+FRONTEND_DIRECTORY = PROJECT_ROOT / "frontend"
 
 
 def create_app() -> Flask:
@@ -79,16 +79,16 @@ def create_app() -> Flask:
 
     @app.get("/")
     def frontend_index():
-        return send_from_directory(PUBLIC_DIRECTORY, "index.html")
+        return send_from_directory(FRONTEND_DIRECTORY, "index.html")
 
     @app.get("/<path:frontend_path>")
     def frontend_fallback(frontend_path: str):
         """Return the frontend shell without masking unmatched API requests."""
         if frontend_path == "api" or frontend_path.startswith("api/"):
             abort(404)
-        if (PUBLIC_DIRECTORY / frontend_path).is_file():
-            return send_from_directory(PUBLIC_DIRECTORY, frontend_path)
-        return send_from_directory(PUBLIC_DIRECTORY, "index.html")
+        if (FRONTEND_DIRECTORY / frontend_path).is_file():
+            return send_from_directory(FRONTEND_DIRECTORY, frontend_path)
+        return send_from_directory(FRONTEND_DIRECTORY, "index.html")
 
     return app
 
