@@ -180,13 +180,34 @@ class DetectSafetyConceptsTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn(CHEST_PAIN_PRESSURE, detect_safety_concepts(text))
 
-    def test_vague_cardiac_references_intentionally_not_flagged(self) -> None:
-        """Generic "something's wrong with my heart" framing is not a
-        specific recognized warning sign -- intentionally excluded per
-        product direction, not a bug."""
+    def test_first_person_cardiac_concern_variations(self) -> None:
+        """"wrong" + "heart" anchor group (FIRST_PERSON_CONCERN +
+        CARDIAC_ANCHOR): genuine first-person concern about one's own heart,
+        order-independent so hedging ("I think", "seriously") never breaks
+        the match. Product direction: this must be treated as a cardiac
+        emergency concern, not dismissed as too vague."""
         for text in (
             "I think something is wrong with my heart",
-            "my heart feels like it's going to explode",
+            "I think something is seriously wrong with my heart",
+            "Something feels very wrong with my heart",
+            "I feel something is wrong with my heart",
+            "My heart feels very wrong and my chest hurts",
+        ):
+            with self.subTest(text=text):
+                self.assertIn(CARDIAC_EMERGENCY_CONCERN, detect_safety_concepts(text))
+
+    def test_purely_metaphorical_heart_reference_intentionally_not_flagged(self) -> None:
+        """A metaphorical figure of speech with no "wrong"/attack anchor is
+        still too vague to treat as a specific recognized warning sign."""
+        self.assertEqual(detect_safety_concepts("my heart feels like it's going to explode"), set())
+
+    def test_heart_attack_context_and_third_party_cases_stay_unflagged(self) -> None:
+        for text in (
+            "What are the symptoms of a heart attack?",
+            "I am researching heart attacks",
+            "My father had a heart attack last year",
+            "My mother has heart disease",
+            "What causes heart problems?",
         ):
             with self.subTest(text=text):
                 self.assertEqual(detect_safety_concepts(text), set())

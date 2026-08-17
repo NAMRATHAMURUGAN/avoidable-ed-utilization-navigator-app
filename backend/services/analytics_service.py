@@ -265,3 +265,90 @@ def get_population_analytics(session: Session | None = None) -> dict[str, Any]:
 
     with session_scope() as sess:
         return _execute_get_population_analytics(sess)
+
+
+def _rightpath_acuity_distribution(session: Session) -> list[dict[str, Any]]:
+    """Real counts of triage_encounters grouped by the acuity the safety
+    engine recommended. Empty when no encounters exist yet."""
+    rows = session.execute(
+        select(TriageEncounter.recommended_acuity, func.count(TriageEncounter.id))
+        .group_by(TriageEncounter.recommended_acuity)
+        .order_by(func.count(TriageEncounter.id).desc())
+    ).all()
+    return [{"acuity": acuity, "count": int(count)} for acuity, count in rows]
+
+
+def _rightpath_pathway_distribution(session: Session) -> list[dict[str, Any]]:
+    """Real counts of navigation_actions grouped by the acuity the patient
+    actually selected/acted on."""
+    rows = session.execute(
+        select(NavigationAction.selected_acuity, func.count(NavigationAction.id))
+        .where(NavigationAction.selected_acuity.is_not(None))
+        .group_by(NavigationAction.selected_acuity)
+        .order_by(func.count(NavigationAction.id).desc())
+    ).all()
+    return [{"pathway": pathway, "count": int(count)} for pathway, count in rows]
+
+
+def _rightpath_activity_trend(session: Session) -> list[dict[str, Any]]:
+    """Real, timestamped RightPath triage-encounter volume by day."""
+    day = func.date(TriageEncounter.created_at).label("day")
+    rows = session.execute(
+        select(day, func.count(TriageEncounter.id)).group_by(day).order_by(day)
+    ).all()
+    return [{"date": str(day_value), "count": int(count)} for day_value, count in rows]
+
+
+def _execute_get_rightpath_analytics(session: Session) -> dict[str, Any]:
+    # Only authenticated-user encounters count as a "RightPath user" --
+    # anonymous (user_id IS NULL) encounters are still counted in
+    # totalAssessments below but never inflate the distinct-user count.
+    total_users = (
+        session.scalar(
+            select(func.count(func.distinct(TriageEncounter.user_id))).where(
+                TriageEncounter.user_id.is_not(None)
+            )
+        )
+        or 0
+    )
+    total_assessments = session.scalar(select(func.count(TriageEncounter.id))) or 0
+    emergency_assessments = (
+        session.scalar(
+            select(func.count(TriageEncounter.id)).where(TriageEncounter.is_emergency.is_(True))
+        )
+        or 0
+    )
+    non_emergency_assessments = (
+        session.scalar(
+            select(func.count(TriageEncounter.id)).where(TriageEncounter.is_emergency.is_(False))
+        )
+        or 0
+    )
+    navigation_actions_count = session.scalar(select(func.count(NavigationAction.id))) or 0
+
+    return {
+        "totalRightPathUsers": int(total_users),
+        "totalAssessments": int(total_assessments),
+        "emergencyAssessments": int(emergency_assessments),
+        "nonEmergencyAssessments": int(non_emergency_assessments),
+        "acuityDistribution": _rightpath_acuity_distribution(session),
+        "navigationActions": int(navigation_actions_count),
+        "pathwayDistribution": _rightpath_pathway_distribution(session),
+        "activityTrend": _rightpath_activity_trend(session),
+    }
+
+
+def get_rightpath_analytics(session: Session | None = None) -> dict[str, Any]:
+    """Return database-backed aggregate RightPath (patient-app) activity
+    analytics for the payer portal.
+
+    Aggregate-only, by construction: every query below selects only count/
+    group-by columns. This function never touches and can never return
+    chief_complaint, action_details, or any patient-profile field -- there is
+    no code path here that selects those columns.
+    """
+    if session is not None:
+        return _execute_get_rightpath_analytics(session)
+
+    with session_scope() as sess:
+        return _execute_get_rightpath_analytics(sess)

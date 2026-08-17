@@ -427,6 +427,48 @@
               <div class="loading-spinner-wrap"><div class="spinner"></div></div>
             </div>
           </div>
+
+          <!-- RightPath Intelligence: real, database-backed patient-app activity
+               (triage_encounters / navigation_actions). Additive to, and kept
+               visually/conceptually separate from, the CMS/member analytics above. -->
+          <div class="card-header" style="margin-top: 32px;">
+            <p class="eyebrow">RightPath Activity</p>
+            <h2>RightPath Intelligence</h2>
+            <p class="muted">Real counts of triage assessments and care-navigation actions recorded through the RightPath patient app. Separate from the CMS/member population analytics above.</p>
+          </div>
+          <div id="rightpath-stat-grid" class="stat-grid-container">
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+          </div>
+
+          <div class="chart-grid">
+            <div class="card">
+              <div class="card-header">
+                <p class="eyebrow">Safety-Engine Output</p>
+                <h2>Care Recommendation Distribution</h2>
+                <p class="muted">Recommended acuity from the deterministic safety engine, across all recorded assessments.</p>
+              </div>
+              <div id="rightpath-acuity-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-acuity"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <p class="eyebrow">Patient Choice</p>
+                <h2>Selected Care Pathway Distribution</h2>
+                <p class="muted">The care pathway patients actually selected or acted on.</p>
+              </div>
+              <div id="rightpath-pathway-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-pathway"></canvas></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+              <p class="eyebrow">Daily Volume</p>
+              <h2>RightPath Activity Trend</h2>
+              <p class="muted">Daily count of triage assessments recorded through RightPath.</p>
+            </div>
+            <div id="rightpath-trend-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-trend"></canvas></div>
+          </div>
         </section>
 
         <!-- VIEW 6: MEMBER COHORT (Payer Workspace) -->

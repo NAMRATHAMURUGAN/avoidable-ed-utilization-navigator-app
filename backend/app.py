@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import HTTPException
 
 from backend.config import get_security_settings
-from backend.routes.analytics import analytics_blueprint
+from backend.routes.analytics import analytics_blueprint, payer_analytics_blueprint
 from backend.routes.auth import auth_blueprint
 from backend.routes.ml_results import ml_results_blueprint
 from backend.routes.navigation import navigation_blueprint
@@ -43,6 +43,7 @@ def create_app() -> Flask:
     app.register_blueprint(ml_results_blueprint)
     app.register_blueprint(patients_blueprint)
     app.register_blueprint(analytics_blueprint)
+    app.register_blueprint(payer_analytics_blueprint)
     app.register_blueprint(providers_blueprint)
     app.register_blueprint(triage_blueprint)
     app.register_blueprint(navigation_blueprint)

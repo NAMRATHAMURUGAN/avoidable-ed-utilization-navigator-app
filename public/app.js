@@ -15,6 +15,8 @@ const state = {
   patients: [],
   analytics: null,
   analyticsLoaded: false,
+  rightpathAnalytics: null,
+  rightpathAnalyticsLoaded: false,
   mlAnomalySummary: null,
   mlAnomalySummaryLoaded: false,
   interventions: [],
@@ -249,6 +251,8 @@ async function handleLogout() {
   state.patients = [];
   state.analytics = null;
   state.analyticsLoaded = false;
+  state.rightpathAnalytics = null;
+  state.rightpathAnalyticsLoaded = false;
   state.mlAnomalySummary = null;
   state.mlAnomalySummaryLoaded = false;
   state.interventions = [];
@@ -1155,6 +1159,137 @@ async function renderDashboard() {
       </div>
     `;
   }
+
+  // RightPath Intelligence: real, database-backed patient-app activity
+  // (triage_encounters / navigation_actions), fetched separately from and
+  // never merged into the CMS/member analytics above.
+  if (!state.rightpathAnalyticsLoaded) {
+    try {
+      state.rightpathAnalytics = await request('/api/payer/analytics/rightpath');
+      state.rightpathAnalyticsLoaded = true;
+    } catch (error) {
+      console.error('Failed to load RightPath analytics:', error);
+    }
+  }
+  renderRightPathIntelligence(state.rightpathAnalytics);
+}
+
+/**
+ * RIGHTPATH INTELLIGENCE (Command Center)
+ * Real, database-backed RightPath patient-app activity from GET
+ * /api/payer/analytics/rightpath (aggregate counts only -- see
+ * analytics_service.get_rightpath_analytics). Additive to, and kept
+ * separate from, the CMS/member population analytics above.
+ */
+function renderRightPathIntelligence(data) {
+  const statGrid = $('#rightpath-stat-grid');
+  if (!statGrid) return;
+
+  if (!data) {
+    statGrid.innerHTML = '<div class="empty-state" style="padding: 20px 12px;"><p>Unable to load RightPath activity data.</p></div>';
+    return;
+  }
+
+  statGrid.innerHTML = [
+    ['Total RightPath Users', formatNumber(data.totalRightPathUsers), 'Distinct authenticated patients who completed an assessment'],
+    ['Total Assessments', formatNumber(data.totalAssessments), 'Triage assessments recorded'],
+    ['Emergency Assessments', formatNumber(data.emergencyAssessments), 'Flagged by the deterministic safety engine'],
+    ['Non-Emergency Assessments', formatNumber(data.nonEmergencyAssessments), 'Routed to lower-acuity care'],
+    ['Navigation Actions', formatNumber(data.navigationActions), 'Care pathways recorded'],
+  ].map(([label, val, detail]) => `
+    <div class="stat-card">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value">${val}</div>
+      <div class="stat-detail">${detail}</div>
+    </div>
+  `).join('');
+
+  renderRightPathAcuityChart(data.acuityDistribution);
+  renderRightPathPathwayChart(data.pathwayDistribution);
+  renderRightPathTrendChart(data.activityTrend);
+}
+
+function renderRightPathAcuityChart(distribution) {
+  const el = document.getElementById('chart-rightpath-acuity');
+  if (!distribution || distribution.length === 0) {
+    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath activity yet.</p>';
+    return;
+  }
+  renderChartJs('chart-rightpath-acuity', {
+    type: 'bar',
+    data: {
+      labels: distribution.map(row => (row.acuity || 'Unknown').replace(/_/g, ' ')),
+      datasets: [{
+        label: 'Assessments',
+        data: distribution.map(row => row.count),
+        backgroundColor: BRAND_COLORS.teal,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderRightPathPathwayChart(distribution) {
+  const el = document.getElementById('chart-rightpath-pathway');
+  if (!distribution || distribution.length === 0) {
+    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath activity yet.</p>';
+    return;
+  }
+  renderChartJs('chart-rightpath-pathway', {
+    type: 'bar',
+    data: {
+      labels: distribution.map(row => (row.pathway || 'Unknown').replace(/_/g, ' ')),
+      datasets: [{
+        label: 'Navigation actions',
+        data: distribution.map(row => row.count),
+        backgroundColor: BRAND_COLORS.coral,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderRightPathTrendChart(trend) {
+  const el = document.getElementById('chart-rightpath-trend');
+  if (!trend || trend.length === 0) {
+    if (el) el.closest('.chart-canvas-wrap').innerHTML = '<p class="muted">No RightPath activity yet.</p>';
+    return;
+  }
+  renderChartJs('chart-rightpath-trend', {
+    type: 'line',
+    data: {
+      labels: trend.map(row => row.date),
+      datasets: [{
+        label: 'Assessments recorded',
+        data: trend.map(row => row.count),
+        borderColor: BRAND_COLORS.deep,
+        backgroundColor: 'rgba(18, 48, 71, 0.12)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
 }
 
 /**

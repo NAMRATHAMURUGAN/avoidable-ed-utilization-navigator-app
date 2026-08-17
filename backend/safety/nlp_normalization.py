@@ -259,6 +259,12 @@ _ANCHOR_GROUP_PATTERNS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
     # "unbearable/severe/extreme breathing problem"
     (SHORTNESS_OF_BREATH, (("unbearable", "severe", "extreme", "intense"), ("breathing", "breath"), ("problem",))),
 
+    # "something is wrong with my heart" / "my heart feels very wrong" --
+    # genuine first-person concern about one's own heart (FIRST_PERSON_CONCERN
+    # anchor "wrong" + CARDIAC_ANCHOR "heart"), order-independent, so hedging
+    # ("I think", "seriously") never breaks the match.
+    (CARDIAC_EMERGENCY_CONCERN, (("wrong",), ("heart",))),
+
     # "crushing pain in my chest" / "crushing feeling in my chest" (reordered
     # "crushing chest pain"). Bare co-occurrence, no severity gate, for the
     # same reason "chest pain"/"chest pressure" already require none: this

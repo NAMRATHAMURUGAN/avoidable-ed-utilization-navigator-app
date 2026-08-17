@@ -173,6 +173,33 @@ class TriageFreeTextSafetyServiceTests(unittest.TestCase):
                 self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
                 self.assertTrue(result["isEmergencyRedFlag"])
 
+    def test_first_person_cardiac_concern_reaches_emergency(self) -> None:
+        complaints = [
+            "I think something is wrong with my heart",
+            "I think something is seriously wrong with my heart",
+            "Something feels very wrong with my heart",
+            "I feel like I'm having a heart attack",
+            "I think I'm having a heart attack",
+        ]
+        for complaint in complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_heart_attack_context_and_third_party_cases_stay_non_emergency(self) -> None:
+        complaints = [
+            "What are the symptoms of a heart attack?",
+            "I am researching heart attacks",
+            "My father had a heart attack last year",
+            "My mother has heart disease",
+        ]
+        for complaint in complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertNotEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertFalse(result["isEmergencyRedFlag"])
+
     def test_stroke_natural_language_variations_reach_emergency(self) -> None:
         complaints = [
             "my speech suddenly became slurred",
