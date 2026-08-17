@@ -20,6 +20,7 @@ from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.safety.engine import evaluate_safety
+from backend.safety.nlp_normalization import extract_safety_concept_phrases
 from backend.services import provider_service
 from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
@@ -94,7 +95,7 @@ def validate_triage_request(data: Any) -> dict[str, Any]:
 
 
 def _execute_triage_request(
-    session: Session, data: dict[str, Any], *, allow_member_linkage: bool
+    session: Session, data: dict[str, Any], *, allow_member_linkage: bool, user_id: int | None = None
 ) -> dict[str, Any]:
     chief_complaint = str(data.get("chiefComplaint", "") or "").strip()
     symptoms_duration = str(data.get("symptomsDuration", "") or "").strip()
@@ -170,10 +171,24 @@ def _execute_triage_request(
             anomaly_data={"anomaly_flag": anomaly_flag},
         )
 
+    # Natural-language safety-concept extraction: a small, deterministic,
+    # non-ML normalization layer that detects controlled high-confidence
+    # emergency phrases (including typo/synonym variants) in the patient's
+    # own free text and free-text-style associated symptoms, and maps each
+    # one to an EXISTING backend/safety/rules.py alias phrase. It does not
+    # decide is_emergency itself -- the phrases it surfaces are merged into
+    # the symptom text handed to the unmodified evaluate_safety() below,
+    # exactly as if the patient had typed that phrase directly. The engine's
+    # own decision logic and rule configuration are untouched.
+    safety_screening_symptoms = list(associated_symptoms)
+    for phrase in extract_safety_concept_phrases(chief_complaint, associated_symptoms):
+        if phrase not in safety_screening_symptoms:
+            safety_screening_symptoms.append(phrase)
+
     triage_input = {
         "chiefComplaint": chief_complaint,
         "symptomsDuration": symptoms_duration,
-        "associatedSymptoms": associated_symptoms,
+        "associatedSymptoms": safety_screening_symptoms,
         "selectedRedFlags": selected_red_flags,
         "hasRedFlags": has_red_flags,
     }
@@ -267,6 +282,7 @@ def _execute_triage_request(
     repo = EncounterRepository(session)
     enc = TriageEncounter(
         member_id=member_id,
+        user_id=user_id,
         session_id=session_id,
         chief_complaint=chief_complaint,
         symptoms_duration=symptoms_duration,
@@ -322,6 +338,7 @@ def process_triage_request(
     session: Session | None = None,
     *,
     allow_member_linkage: bool = False,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     """Process a symptom triage request via the deterministic safety engine and persist encounter.
 
@@ -331,10 +348,21 @@ def process_triage_request(
     doesn't explicitly authorize it gets the safe, anonymous-equivalent
     behavior. The deterministic safety-engine screening is identical either
     way and is never influenced by this flag.
+
+    ``user_id`` is identity/persistence linkage only -- which login identity
+    (if any) created this encounter, so it can later be retrieved via
+    GET /api/navigation/my-history. It is independent of, and has no effect
+    on, ``allow_member_linkage`` or the CMS Member/ML enrichment behavior:
+    it should be set for any authenticated caller (PATIENT or PAYER), not
+    only when member linkage is also allowed.
     """
     validate_triage_request(data)
     if session is not None:
-        return _execute_triage_request(session, data, allow_member_linkage=allow_member_linkage)
+        return _execute_triage_request(
+            session, data, allow_member_linkage=allow_member_linkage, user_id=user_id
+        )
 
     with session_scope() as sess:
-        return _execute_triage_request(sess, data, allow_member_linkage=allow_member_linkage)
+        return _execute_triage_request(
+            sess, data, allow_member_linkage=allow_member_linkage, user_id=user_id
+        )

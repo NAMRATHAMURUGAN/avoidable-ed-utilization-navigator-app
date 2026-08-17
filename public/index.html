@@ -4,17 +4,57 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#123047" />
-    <title>Care Navigation Navigator — Healthcare Decision Support</title>
+    <title>RightPath — Avoidable Emergency Department Utilization Navigator</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
-    <!-- AUTH SCREEN: shown until GET /api/auth/me confirms a session; app-shell stays hidden until then -->
-    <div id="auth-screen">
+    <!-- PORTAL SELECTION SCREEN: shown first for any unauthenticated visitor.
+         The selected portal is UI context ONLY -- it never grants
+         authorization. After login, the authenticated backend role (from
+         GET/POST /api/auth/*) is the sole source of truth for which
+         workspace is entered (see enterAuthenticatedWorkspace in app.js). -->
+    <div id="portal-select-screen">
+      <div style="max-width: 900px; margin: 64px auto; padding: 0 20px;">
+        <div style="text-align: center; margin-bottom: 40px;">
+          <span class="brand-mark" style="display: inline-flex; margin-bottom: 14px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+          <h1 style="margin: 0 0 6px 0; font-size: 34px;">RightPath</h1>
+          <p class="subtitle" style="margin: 0 auto 14px auto; max-width: 520px;">Avoidable Emergency Department Utilization Navigator</p>
+          <p class="eyebrow" style="margin: 0;">Choose your portal</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+          <div class="card">
+            <div class="card-header">
+              <h2>Patient / Member</h2>
+              <p class="muted">Access symptom assessment, care recommendations, provider navigation, profile and care history.</p>
+            </div>
+            <button type="button" class="button primary full-width" data-portal-select="PATIENT">Continue as Patient / Member</button>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h2>Healthcare Manager / Payer Admin</h2>
+              <p class="muted">Analyze emergency department utilization, identify priority members, review ML insights and coordinate interventions.</p>
+            </div>
+            <button type="button" class="button primary full-width" data-portal-select="PAYER">Continue as Healthcare Manager / Payer Admin</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH SCREEN: shown after a portal is selected, or immediately once
+         GET /api/auth/me confirms an existing session is invalid; app-shell
+         stays hidden until a session is confirmed. -->
+    <div id="auth-screen" class="role-hidden">
       <div class="card" style="max-width: 420px; margin: 64px auto;">
+        <p style="margin: 0 0 16px 0;">
+          <button type="button" id="back-to-portal-select" class="text-button">&larr; Back to portal selection</button>
+        </p>
         <div class="card-header">
           <h2 id="auth-screen-title">Log In</h2>
-          <p id="auth-screen-subtitle" class="muted">Sign in to continue to Care Navigation Navigator.</p>
+          <p id="auth-screen-subtitle" class="muted">Sign in to continue to RightPath.</p>
         </div>
 
         <div id="auth-error" class="notice emergency role-hidden"></div>
@@ -44,7 +84,11 @@
           <button type="submit" class="button primary full-width">Create Account</button>
         </form>
 
-        <p class="muted" style="margin-top: 16px; text-align: center;">
+        <p id="payer-registration-note" class="muted role-hidden" style="font-size: 13px;">
+          Payer / Healthcare Manager accounts are provisioned separately by an administrator and are not available through public self-registration.
+        </p>
+
+        <p id="auth-toggle-row" class="muted" style="margin-top: 16px; text-align: center;">
           <button type="button" id="auth-toggle-mode" class="text-button">New here? Create an account</button>
         </p>
       </div>
@@ -68,7 +112,7 @@
           <span class="brand-mark">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
           </span>
-          <span class="brand-text">Care Navigation<br /><strong>Navigator</strong></span>
+          <span class="brand-text">Right<strong>Path</strong></span>
         </a>
         <div class="workspace-divider"></div>
         <span id="workspace-title" class="workspace-title">Patient Portal</span>
@@ -208,6 +252,7 @@
                 <h2>Personal Information</h2>
                 <p class="muted">Self-entered details (distinguished from Medicare member records).</p>
               </div>
+              <div id="profile-status-banner"></div>
               <form id="patient-self-profile-form">
                 <div class="form-group">
                   <label for="self-patient-name">Full Name *</label>
@@ -277,26 +322,11 @@
           </div>
         </section>
 
-        <!-- VIEW 3: CARE OPTIONS / FIND CARE -->
-        <section id="providers-view" class="view">
-          <div class="page-header">
-            <div>
-              <p class="eyebrow">Care Discovery</p>
-              <h1>Find care near you</h1>
-              <p class="subtitle">Location-based provider discovery will use Google Maps / Places integration.</p>
-            </div>
-          </div>
-
-          <div class="card integration-pending-card">
-            <div class="empty-state">
-              <div class="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              </div>
-              <h3>Integration pending configuration</h3>
-              <p>Real-time hospital, urgent care, and clinic search will appear here once Google Maps / Places is connected. No placeholder locations are shown in the meantime.</p>
-            </div>
-          </div>
-        </section>
+        <!-- VIEW 3: CARE OPTIONS / FIND CARE
+             Retired the static "Google Maps / Places pending" placeholder
+             (formerly #providers-view / route "providers"): the sidebar's
+             "Find Care Near You" now opens the live urgent-care map below
+             instead. See #urgent-care-map-view. -->
 
         <!-- URGENT CARE ONLY: live location, OSM facility discovery, and ORS routing -->
         <section id="urgent-care-map-view" class="view">
@@ -345,8 +375,8 @@
         <section id="dashboard-view" class="view">
           <div class="page-header">
             <div>
-              <p id="dashboard-eyebrow" class="eyebrow">Operations Console</p>
-              <h1 id="dashboard-title">Population Health Overview</h1>
+              <p id="dashboard-eyebrow" class="eyebrow">Payer Intelligence</p>
+              <h1 id="dashboard-title">RightPath Payer Command Center</h1>
               <p id="dashboard-subtitle" class="subtitle">Database-backed aggregate utilization metrics and clinical prioritization signals.</p>
             </div>
           </div>
@@ -385,15 +415,27 @@
               <p class="muted caption-note">Time patterns illustrate historical ED access peaks; they do not dictate emergency necessity for current symptoms.</p>
             </div>
           </div>
+
+          <!-- Risk x Anomaly Priority Matrix -->
+          <div class="card" style="margin-top: 24px;">
+            <div class="card-header">
+              <p class="eyebrow">Decision Support</p>
+              <h2>Risk &times; Anomaly Priority Matrix</h2>
+              <p class="muted">Cross-tabulates the historical high-utilization risk category against Isolation Forest anomaly status. Anomaly means an unusual utilization pattern, not a clinical diagnosis.</p>
+            </div>
+            <div id="priority-matrix" class="priority-matrix-grid">
+              <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+            </div>
+          </div>
         </section>
 
         <!-- VIEW 6: MEMBER COHORT (Payer Workspace) -->
         <section id="cohort-view" class="view">
           <div class="page-header">
             <div>
-              <p class="eyebrow">Beneficiary Management</p>
-              <h1>Member Population Directory</h1>
-              <p class="subtitle">Complete database-backed Medicare cohort with ML risk stratification.</p>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Priority Members</h1>
+              <p class="subtitle">Complete database-backed Medicare cohort with ML risk stratification, prioritized by utilization risk.</p>
             </div>
           </div>
 
@@ -438,12 +480,97 @@
                   <option value="LOW">Low Priority</option>
                 </select>
               </div>
+              <div class="filter-group">
+                <label for="utilization-band-filter">Utilization Band</label>
+                <select id="utilization-band-filter" class="input-control">
+                  <option value="">All Bands</option>
+                  <option value="0">0 ED visits</option>
+                  <option value="1">1 ED visit</option>
+                  <option value="2-3">2-3 ED visits</option>
+                  <option value="4-5">4-5 ED visits</option>
+                  <option value="6+">6+ ED visits</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="anomaly-filter">Anomaly Status</label>
+                <select id="anomaly-filter" class="input-control">
+                  <option value="">All Members</option>
+                  <option value="ANOMALOUS">Anomalous Only</option>
+                  <option value="NORMAL">Normal Only</option>
+                </select>
+              </div>
+              <div class="filter-group button-align">
+                <button id="reset-cohort-filters" type="button" class="button ghost">Reset Filters</button>
+              </div>
             </div>
           </div>
 
           <div class="card table-card-wrap">
             <div id="member-table" class="table-responsive">
               <div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading member population...</p></div>
+            </div>
+            <div id="member-table-pagination" class="table-pagination-row"></div>
+          </div>
+        </section>
+
+        <!-- VIEW 7: UTILIZATION INSIGHTS (Payer Intelligence) -->
+        <section id="utilization-insights-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Utilization Insights</h1>
+              <p class="subtitle">ML utilization-pattern analysis across the member population, combining historical high-utilization prediction with unsupervised anomaly detection.</p>
+            </div>
+          </div>
+          <div id="utilization-insights-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 8: INTERVENTIONS (Payer Intelligence) -->
+        <section id="interventions-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Interventions</h1>
+              <p class="subtitle">Recommended care-navigation actions for prioritized members, generated from historical utilization and ML risk signals.</p>
+            </div>
+          </div>
+          <div id="interventions-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 9: COST REDUCTION & PROGRAM OUTCOMES (Payer Intelligence) -->
+        <section id="cost-reduction-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Cost Reduction &amp; Program Outcomes</h1>
+              <p class="subtitle">Aggregate ED utilization and spend. Avoidability and savings metrics are shown honestly once the analytics layer that computes them is available.</p>
+            </div>
+          </div>
+          <div id="cost-reduction-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 10: PAYER INTELLIGENCE ASSISTANT (placeholder entry point only) -->
+        <section id="assistant-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Payer Intelligence Assistant</h1>
+              <p class="subtitle">Ask questions about utilization patterns, member risk, interventions and cost-reduction opportunities.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
+              </div>
+              <h3>AI assistant integration pending</h3>
+              <p>AI knowledge layer: <strong>Gemini API + Pinecone RAG</strong>.<br />This assistant will answer natural-language questions grounded in this workspace's real utilization, risk, and intervention data. It has not been connected yet — this page is a placeholder entry point only.</p>
             </div>
           </div>
         </section>
@@ -495,6 +622,7 @@
 
     <!-- Application Script Entry Point -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin=""></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -29,10 +29,15 @@ def triage():
 
     current_user = get_current_user()
     allow_member_linkage = current_user is not None and current_user.role == "PAYER"
+    # Identity/persistence linkage only, independent of the PAYER-only
+    # allow_member_linkage gate above: any authenticated caller's own
+    # encounter gets tagged with their user id so it can later be retrieved
+    # via GET /api/navigation/my-history.
+    user_id = current_user.id if current_user is not None else None
 
     try:
         response = triage_service.process_triage_request(
-            data, allow_member_linkage=allow_member_linkage
+            data, allow_member_linkage=allow_member_linkage, user_id=user_id
         )
     except triage_service.TriageValidationError as error:
         return jsonify({"error": str(error)}), 400
