@@ -268,6 +268,53 @@ class DetectSafetyConceptsTests(unittest.TestCase):
         self.assertIn(CARDIAC_EMERGENCY_CONCERN, concepts)
         self.assertIn(CHEST_PAIN_PRESSURE, concepts)
 
+    def test_explicitly_negated_symptoms_are_not_flagged(self) -> None:
+        """A symptom explicitly denied by the patient ("no chest pain", "I do
+        not have chest pain", "I deny chest pain") must never be treated as a
+        positive emergency signal. Reproduces the live-browser-reported bug:
+        'I have no chest pain and no trouble breathing. I only have a mild
+        cough.' incorrectly returned an emergency warning."""
+        for text in (
+            "I have no chest pain.",
+            "I do not have chest pain.",
+            "I don't have chest pain.",
+            "I deny chest pain.",
+            "No trouble breathing.",
+            "I have no trouble breathing.",
+            "I have no chest pain and no trouble breathing.",
+            "I have no chest pain and no trouble breathing. I only have a mild cough.",
+            "No chest pain, no shortness of breath.",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(detect_safety_concepts(text), set())
+
+    def test_negation_is_scoped_to_its_own_clause_not_the_whole_text(self) -> None:
+        """A negated symptom in one clause must never suppress a genuinely
+        positive, independently reported symptom in a different clause --
+        never an unsafe blanket 'ignore everything after no'."""
+        cases = (
+            ("I have no chest pain, but I have severe shortness of breath.", CHEST_PAIN_PRESSURE, SHORTNESS_OF_BREATH),
+            ("I have no chest pain, but I am suddenly having difficulty breathing.", CHEST_PAIN_PRESSURE, SHORTNESS_OF_BREATH),
+            ("I deny chest pain. I am having a stroke.", CHEST_PAIN_PRESSURE, STROKE_WARNING),
+        )
+        for text, negated_concept, positive_concept in cases:
+            with self.subTest(text=text):
+                concepts = detect_safety_concepts(text)
+                self.assertNotIn(negated_concept, concepts)
+                self.assertIn(positive_concept, concepts)
+
+    def test_genuine_positive_symptoms_still_detected_despite_negation_handling(self) -> None:
+        """Negation handling must never suppress a real, non-negated
+        emergency symptom -- the conservative safety default is unchanged."""
+        for text in (
+            "I have chest pain.",
+            "I have severe chest pain.",
+            "I am having a heart attack.",
+            "I have severe shortness of breath.",
+        ):
+            with self.subTest(text=text):
+                self.assertNotEqual(detect_safety_concepts(text), set())
+
 
 class ExtractSafetyConceptPhrasesTests(unittest.TestCase):
     """Tests for the function triage_service.py actually calls."""

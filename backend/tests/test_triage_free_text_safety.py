@@ -292,6 +292,63 @@ class TriageFreeTextSafetyServiceTests(unittest.TestCase):
         self.assertEqual(encounter.associated_symptoms, [])
         self.assertEqual(encounter.chief_complaint, "heart attack")
 
+    # ------------------------------------------------------------------
+    # NEGATION: a symptom the patient explicitly denies must never trigger
+    # emergency routing. Reproduces a live-browser-reported bug where
+    # "I have no chest pain and no trouble breathing. I only have a mild
+    # cough." incorrectly returned EMERGENCY MEDICAL WARNING with no
+    # checkboxes selected.
+    # ------------------------------------------------------------------
+
+    def test_negated_symptoms_do_not_reach_emergency(self) -> None:
+        non_emergency_complaints = [
+            "I have no chest pain.",
+            "I do not have chest pain.",
+            "I deny chest pain.",
+            "No trouble breathing.",
+            "I have no chest pain and no trouble breathing. I only have a mild cough.",
+        ]
+        for complaint in non_emergency_complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertNotEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertFalse(result["isEmergencyRedFlag"])
+                self.assertEqual(result["triggeredRules"], [])
+
+    def test_positive_chest_pain_still_reaches_emergency(self) -> None:
+        for complaint in ("I have chest pain.", "I have severe chest pain."):
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_negation_in_one_clause_does_not_suppress_a_positive_symptom_in_another(self) -> None:
+        emergency_complaints = [
+            "I have no chest pain, but I have severe shortness of breath.",
+            "I have no chest pain, but I am suddenly having difficulty breathing.",
+        ]
+        for complaint in emergency_complaints:
+            with self.subTest(complaint=complaint):
+                result = self._triage(chiefComplaint=complaint)
+                self.assertEqual(result["recommendedAcuity"], "EMERGENCY")
+                self.assertTrue(result["isEmergencyRedFlag"])
+
+    def test_negation_masking_never_alters_the_persisted_chief_complaint(self) -> None:
+        """The negation-sanitized copy is used only to screen the complaint;
+        the patient's own original wording must be exactly what is
+        persisted/displayed, completely unmodified."""
+        from backend.models import TriageEncounter
+
+        complaint = "I have no chest pain and no trouble breathing. I only have a mild cough."
+        result = self._triage(chiefComplaint=complaint)
+        encounter = (
+            self.session.query(TriageEncounter)
+            .filter_by(id=result["encounterId"])
+            .first()
+        )
+        self.assertIsNotNone(encounter)
+        self.assertEqual(encounter.chief_complaint, complaint)
+
 
 class TriageFreeTextSafetyHttpTests(unittest.TestCase):
     """A smaller end-to-end check through the actual POST /api/triage route,

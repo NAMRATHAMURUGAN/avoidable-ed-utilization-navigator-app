@@ -20,7 +20,10 @@ from backend.repositories.encounter_repository import EncounterRepository
 from backend.repositories.member_repository import MemberRepository
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.safety.engine import evaluate_safety
-from backend.safety.nlp_normalization import extract_safety_concept_phrases
+from backend.safety.nlp_normalization import (
+    extract_safety_concept_phrases,
+    sanitize_free_text_for_safety_screening,
+)
 from backend.services import provider_service
 from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
@@ -185,8 +188,17 @@ def _execute_triage_request(
         if phrase not in safety_screening_symptoms:
             safety_screening_symptoms.append(phrase)
 
+    # evaluate_safety() independently re-scans "chiefComplaint" against its
+    # own literal alias list, with no negation awareness of its own (see
+    # backend/safety/engine.py -- unmodified). Handing it a copy with
+    # explicitly negated symptom mentions masked out ("no chest pain" ->
+    # negation-masked) prevents that independent scan from misfiring on an
+    # explicit negation, while the RAW chief_complaint above remains exactly
+    # what gets persisted/displayed -- only this screening-only copy differs.
+    safety_screening_chief_complaint = sanitize_free_text_for_safety_screening(chief_complaint)
+
     triage_input = {
-        "chiefComplaint": chief_complaint,
+        "chiefComplaint": safety_screening_chief_complaint,
         "symptomsDuration": symptoms_duration,
         "associatedSymptoms": safety_screening_symptoms,
         "selectedRedFlags": selected_red_flags,

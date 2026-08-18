@@ -365,27 +365,99 @@ def _is_question_framing_without_first_person(normalized_text: str) -> bool:
     return not (set(_tokens(normalized_text)) & _FIRST_PERSON_MARKERS)
 
 
-def detect_safety_concepts(text: str) -> set[str]:
-    """Return the set of controlled safety concepts detected in free text.
+# ---------------------------------------------------------------------------
+# Negation scoping: an explicitly negated symptom mention ("no chest pain",
+# "I do not have chest pain", "I deny chest pain") must never be treated as a
+# positive emergency signal. Negation is scoped two ways, deliberately never
+# as a blanket "ignore everything after the word no":
+#   1. Hard clause boundaries -- sentence punctuation and contrast
+#      conjunctions ("but"/"however"/"although"/"yet") split the text first,
+#      so a negation in one clause can never reach across into a separate,
+#      independently reported symptom ("...no chest pain, but severe
+#      shortness of breath" keeps the second symptom positive).
+#   2. Within a clause, only a critical word with an explicit negation cue
+#      in the few tokens immediately before it is masked -- so two symptoms
+#      in the same clause are judged independently of each other.
+# This only ever REMOVES a negated word from consideration; it can never add
+# or invent a concept, and a clause with no negation cue is scanned exactly
+# as before.
+# ---------------------------------------------------------------------------
+_NEGATION_CUES: frozenset[str] = frozenset({
+    "no", "not", "deny", "denies", "denying", "without", "negative",
+    "dont", "doesnt", "didnt",
+})
+_NEGATION_WINDOW = 3
+_NEGATION_PLACEHOLDER = "xnegatedx"
 
-    Detection fires on the fixed phrase list (exact match after
-    normalization, or a conservative typo-corrected match against that same
-    fixed list) or the structural anchor-group patterns above -- never on
-    generic single words like "heart" or "breathing" in isolation, so
-    routine mentions ("heart health", "breathing is normal", "breathing
-    exercise") do not trigger anything. Reporting/third-party context (e.g.
-    "I read about difficulty breathing", "my mother had difficulty
-    breathing") suppresses detection entirely.
+_CLAUSE_SPLIT_PATTERN = re.compile(r"[.;,]|\bbut\b|\bhowever\b|\balthough\b|\byet\b", re.IGNORECASE)
+
+
+def _split_into_clauses(text: str) -> list[str]:
+    """Split raw free text into independent clauses at sentence/clause
+    boundaries. Operates on the RAW text (before punctuation is stripped by
+    _normalize) since the punctuation itself is what marks the boundary."""
+    if not isinstance(text, str):
+        return []
+    return [clause for clause in _CLAUSE_SPLIT_PATTERN.split(text) if clause and clause.strip()]
+
+
+def _negated_critical_word_indexes(tokens: list[str]) -> set[int]:
+    """Indexes of tokens in `_CRITICAL_WORDS` that are locally negated: an
+    explicit negation cue appears within `_NEGATION_WINDOW` tokens
+    immediately before that specific occurrence. A negation cue that appears
+    only AFTER the critical word, or too far before it, does not count --
+    the conservative default when position is ambiguous is to keep scanning,
+    never to suppress."""
+    negated: set[int] = set()
+    for index, token in enumerate(tokens):
+        if token not in _CRITICAL_WORDS:
+            continue
+        start = max(0, index - _NEGATION_WINDOW)
+        if any(candidate in _NEGATION_CUES for candidate in tokens[start:index]):
+            negated.add(index)
+    return negated
+
+
+def _mask_negated_critical_words(normalized_clause: str) -> str:
+    """Replace only the specific critical-word tokens found locally negated
+    with a neutral placeholder that cannot match any alias/anchor pattern,
+    leaving every other word (including other, non-negated critical words in
+    the same clause) exactly as-is."""
+    tokens = _tokens(normalized_clause)
+    negated_indexes = _negated_critical_word_indexes(tokens)
+    if not negated_indexes:
+        return normalized_clause
+    return " ".join(
+        _NEGATION_PLACEHOLDER if index in negated_indexes else token
+        for index, token in enumerate(tokens)
+    )
+
+
+def sanitize_free_text_for_safety_screening(text: str) -> str:
+    """Return free text with explicitly negated symptom mentions masked out,
+    for use ONLY as the text handed to the deterministic Safety Engine's own
+    independent literal-alias scan (backend/safety/engine.py) -- never for
+    persistence or display. The engine's own scan has no negation awareness
+    and is not modified here (it is not touched at all); this sanitized copy
+    exists solely so "no chest pain" cannot trigger that scan's literal
+    "chest pain" match. Reporting/third-party-context and question-framing
+    handling are unaffected -- those remain scoped to detect_safety_concepts
+    alone, unchanged.
     """
-    normalized = _normalize(text)
-    if not normalized:
-        return set()
+    if not isinstance(text, str) or not text.strip():
+        return text if isinstance(text, str) else ""
+    sanitized_clauses = []
+    for clause in _split_into_clauses(text):
+        normalized_clause = _normalize(clause)
+        if not normalized_clause:
+            continue
+        sanitized_clauses.append(_mask_negated_critical_words(normalized_clause))
+    return " ".join(sanitized_clauses)
 
-    if _is_reporting_or_third_party_context(normalized):
-        return set()
-    if _is_question_framing_without_first_person(normalized):
-        return set()
 
+def _detect_concepts_in_normalized_text(normalized: str) -> set[str]:
+    """The existing (unmodified) phrase/anchor-group scanning logic, applied
+    to whatever already-normalized text it is given."""
     candidates = {normalized}
     corrected = _typo_corrected(normalized)
     if corrected != normalized:
@@ -404,6 +476,45 @@ def detect_safety_concepts(text: str) -> set[str]:
         if any(_anchor_groups_match(_tokens(candidate), groups, _ANCHOR_GROUP_WINDOW) for candidate in candidates):
             detected.add(concept)
 
+    return detected
+
+
+def detect_safety_concepts(text: str) -> set[str]:
+    """Return the set of controlled safety concepts detected in free text.
+
+    Detection fires on the fixed phrase list (exact match after
+    normalization, or a conservative typo-corrected match against that same
+    fixed list) or the structural anchor-group patterns above -- never on
+    generic single words like "heart" or "breathing" in isolation, so
+    routine mentions ("heart health", "breathing is normal", "breathing
+    exercise") do not trigger anything. Reporting/third-party context (e.g.
+    "I read about difficulty breathing", "my mother had difficulty
+    breathing") suppresses detection entirely, checked once for the whole
+    text exactly as before.
+
+    Text is then split into clauses and each clause is scanned
+    independently, with any locally-negated critical word ("no chest pain",
+    "I deny chest pain") masked out first -- so a negated symptom in one
+    clause never suppresses a genuinely positive symptom reported in a
+    different clause ("...no chest pain, but severe shortness of breath"
+    still detects the second concept).
+    """
+    normalized = _normalize(text)
+    if not normalized:
+        return set()
+
+    if _is_reporting_or_third_party_context(normalized):
+        return set()
+    if _is_question_framing_without_first_person(normalized):
+        return set()
+
+    detected: set[str] = set()
+    for clause in _split_into_clauses(text):
+        normalized_clause = _normalize(clause)
+        if not normalized_clause:
+            continue
+        masked_clause = _mask_negated_critical_words(normalized_clause)
+        detected |= _detect_concepts_in_normalized_text(masked_clause)
     return detected
 
 
