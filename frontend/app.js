@@ -847,6 +847,15 @@ function renderNonEmergencyResult(data, container) {
         <h3 class="eyebrow">Next Step</h3>
         ${renderPathwayNextStep(data)}
       </div>
+
+      ${state.activeRole === 'PATIENT' ? `
+        <div class="ai-assistant-cta">
+          <button type="button" class="button ghost" data-open-chat>
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
+            <span>Need more guidance? Ask RightPath AI</span>
+          </button>
+        </div>
+      ` : ''}
     </div>
   `;
 }
@@ -2275,15 +2284,153 @@ async function saveSelfProfile(event) {
 }
 
 /**
- * CARE COPILOT CHAT DRAWER
+ * CARE COPILOT CHAT DRAWER -- RightPath AI Patient Assistant
+ * Reuses the existing #chat-panel scaffold as-is; wires it to POST
+ * /api/patient/assistant. Only ever reachable from the "Ask RightPath AI"
+ * CTA on a NON-EMERGENCY triage result (see renderNonEmergencyResult) --
+ * the emergency result never renders that CTA. The backend independently
+ * re-verifies the encounter's persisted is_emergency value regardless of
+ * what the frontend sends, and returns {emergency: true} if it ever
+ * disagrees; that response is handled below rather than trusted away.
  */
+function openChat() {
+  $('#chat-panel')?.classList.add('open');
+  $('#panel-backdrop')?.classList.add('open');
+}
+
+function closeChat() {
+  $('#chat-panel')?.classList.remove('open');
+  $('#panel-backdrop')?.classList.remove('open');
+}
+
+function addTypingIndicator(messagesContainer, id) {
+  messagesContainer.insertAdjacentHTML('beforeend', `
+    <div class="chat-message assistant typing" id="${id}">
+      <p>RightPath AI is thinking&hellip;</p>
+    </div>
+  `);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function removeTypingIndicator(id) {
+  document.getElementById(id)?.remove();
+}
+
+/**
+ * Safe inline formatting for one line of assistant text: escapes the raw
+ * text first (via the existing escapeHtml), then recognizes only Gemini's
+ * own "**bold**" convention, converting it to a real <strong> tag. Because
+ * the substitution runs on already-escaped text and only ever inserts a
+ * fixed, literal tag, this can never introduce attacker-controlled markup --
+ * it is not a markdown parser, just one narrow, safe pattern.
+ */
+function _formatAssistantInlineText(text) {
+  // Order matters: consume "**bold**" pairs first so the single-asterisk
+  // "*italic*" pass below only ever matches genuinely remaining single
+  // pairs, not the inner half of an already-converted bold pair.
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+}
+
+/**
+ * Small, safe formatter for RightPath Payer AI replies (structured
+ * dashboard-style analytics answers and Gemini prose alike). This is not a
+ * markdown library: it only recognizes the plain-text conventions the
+ * backend/Gemini already produce -- blank-line-separated sections, "•"/"*"/
+ * "-" bullet lines, short title-style heading lines, and a trailing
+ * "Note: ..." line -- and otherwise falls back to plain paragraphs with
+ * preserved line breaks, so ordinary prose still renders correctly. All text
+ * content is escaped before it ever reaches innerHTML (see
+ * _formatAssistantInlineText above).
+ */
+function _isBulletLine(line) {
+  return /^[•*-]\s+/.test(line);
+}
+
+/**
+ * Strip two lightweight Gemini markdown conventions observed in practice
+ * ("### Heading" ATX headings, and a whole line wrapped in "*italic*") down
+ * to plain text before classification -- not a markdown parser, just two
+ * narrow, safe textual normalizations so those literal marker characters
+ * never show up in the rendered UI.
+ */
+function _stripLightweightMarkdown(line) {
+  const withoutHeadingMarker = line.replace(/^#{1,6}\s+/, '');
+  if (_isBulletLine(withoutHeadingMarker)) return withoutHeadingMarker;
+  const wholeLineWrap = withoutHeadingMarker.match(/^\*{1,2}(.+)\*{1,2}$/);
+  return wholeLineWrap ? wholeLineWrap[1].trim() : withoutHeadingMarker;
+}
+
+function _bulletListHtml(lines) {
+  const items = lines
+    .map(line => `<li>${_formatAssistantInlineText(line.replace(/^[•*-]\s+/, ''))}</li>`)
+    .join('');
+  return `<ul class="ai-reply-list">${items}</ul>`;
+}
+
+function _renderAssistantBlock(block) {
+  const lines = block.split('\n').map(line => _stripLightweightMarkdown(line.trim())).filter(Boolean);
+  if (lines.length === 0) return '';
+
+  if (lines.every(_isBulletLine)) {
+    return _bulletListHtml(lines);
+  }
+
+  // The backend emits sub-sections as a heading line immediately followed by
+  // its bullets with NO blank line in between (e.g. "Assessments" then its
+  // three "•" lines) -- so a block can be a heading + list pair, not just
+  // one or the other.
+  if (lines.length > 1 && !_isBulletLine(lines[0]) && lines.slice(1).every(_isBulletLine)) {
+    const heading = `<h4 class="ai-reply-heading">${_formatAssistantInlineText(lines[0])}</h4>`;
+    return heading + _bulletListHtml(lines.slice(1));
+  }
+
+  if (lines.length === 1) {
+    const line = lines[0];
+    if (/^note:/i.test(line)) {
+      return `<p class="ai-reply-note">${_formatAssistantInlineText(line)}</p>`;
+    }
+    const looksLikeHeading = line.length <= 60 && !/[.!?]$/.test(line) && !/:\s*\S/.test(line);
+    if (looksLikeHeading) {
+      return `<h4 class="ai-reply-heading">${_formatAssistantInlineText(line)}</h4>`;
+    }
+    return `<p>${_formatAssistantInlineText(line)}</p>`;
+  }
+
+  // Ordinary multi-line prose paragraph -- preserve line breaks.
+  return `<p>${lines.map(_formatAssistantInlineText).join('<br>')}</p>`;
+}
+
+function formatAssistantReply(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return '<p>Assistant response received.</p>';
+
+  return raw
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean)
+    .map(_renderAssistantBlock)
+    .join('');
+}
+
 async function submitChat(event) {
   event.preventDefault();
   const input = $('#chat-input');
+  const submitBtn = $('#chat-form button[type="submit"]');
   const messagesContainer = $('#chat-messages');
   const messageText = input.value.trim();
+  if (!messageText || input.disabled) return; // guard against duplicate submissions
 
-  if (!messageText) return;
+  if (!state.currentEncounter?.encounterId) {
+    messagesContainer.insertAdjacentHTML('beforeend', `
+      <div class="chat-message assistant">
+        <p>Please complete a symptom assessment first so RightPath AI has context for your question.</p>
+      </div>
+    `);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    return;
+  }
 
   messagesContainer.insertAdjacentHTML('beforeend', `
     <div class="chat-message user">
@@ -2293,26 +2440,122 @@ async function submitChat(event) {
   input.value = '';
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
+  input.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
+  const typingId = `chat-typing-${Date.now()}`;
+  addTypingIndicator(messagesContainer, typingId);
+
   try {
-    const response = await request('/api/chat-copilot', {
+    const response = await request('/api/patient/assistant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: messageText }),
+      body: JSON.stringify({
+        question: messageText,
+        encounterId: state.currentEncounter.encounterId,
+        triageContext: {
+          recommendedAcuity: state.currentEncounter.recommendedAcuity,
+          recommendedSettingName: state.currentEncounter.recommendedSettingName,
+          clinicalRationale: state.currentEncounter.clinicalRationale,
+          isEmergencyRedFlag: state.currentEncounter.isEmergencyRedFlag,
+        },
+      }),
     });
 
+    removeTypingIndicator(typingId);
+    const replyText = response.emergency
+      ? 'RightPath AI is not available for an emergency result. Please follow the emergency guidance above -- call 911 or go to the nearest Emergency Department.'
+      : (response.reply || 'Assistant response received.');
     messagesContainer.insertAdjacentHTML('beforeend', `
       <div class="chat-message assistant">
-        <p>${escapeHtml(response.reply || 'Assistant response received.')}</p>
+        <p>${escapeHtml(replyText)}</p>
       </div>
     `);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
   } catch (error) {
+    // Never surface a raw backend exception -- a clean, safe fallback that
+    // still points the patient back to the recommendation they already have.
+    removeTypingIndicator(typingId);
     messagesContainer.insertAdjacentHTML('beforeend', `
       <div class="chat-message assistant">
-        <p>I encountered an error: ${escapeHtml(error.message)}</p>
+        <p>RightPath AI is temporarily unavailable. Please continue with the recommended care pathway.</p>
       </div>
     `);
+  } finally {
+    input.disabled = false;
+    if (submitBtn) submitBtn.disabled = false;
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
+}
+
+/**
+ * PAYER INTELLIGENCE ASSISTANT (page-embedded, not a drawer)
+ * POST /api/payer/assistant -- grounded only in aggregate CMS/RightPath
+ * analytics and optional approved RAG knowledge (see backend/routes/
+ * assistant.py's _payer_context whitelist). There is no raw patient
+ * complaint/conversation text available client-side to send, by design.
+ */
+async function submitPayerAssistantQuestion(questionText) {
+  const messagesContainer = $('#payer-assistant-messages');
+  const submitBtn = $('#payer-assistant-submit');
+  if (!messagesContainer || !questionText || !questionText.trim()) return;
+  if (submitBtn?.disabled) return; // guard against duplicate/overlapping submissions
+
+  messagesContainer.insertAdjacentHTML('beforeend', `
+    <div class="chat-message user">
+      <p>${escapeHtml(questionText)}</p>
+    </div>
+  `);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+  const input = $('#payer-assistant-input');
+  if (input) input.disabled = true;
+  if (submitBtn) submitBtn.disabled = true;
+  $$('.prompt-chip').forEach(chip => { chip.disabled = true; });
+  const typingId = `payer-assistant-typing-${Date.now()}`;
+  addTypingIndicator(messagesContainer, typingId);
+
+  try {
+    const response = await request('/api/payer/assistant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: questionText }),
+    });
+
+    removeTypingIndicator(typingId);
+    const sources = response.sources || [];
+    const sourcesHtml = sources.length
+      ? `<p class="muted" style="margin: 10px 0 4px 0; font-size: 12.5px; font-weight: 700;">Knowledge sources</p>
+         <div class="chat-sources">
+           ${sources.map(s => `<span class="badge low">${escapeHtml(s.title || s.source || 'Source')}${s.category ? ` &bull; ${escapeHtml(s.category)}` : ''}</span>`).join('')}
+         </div>`
+      : '';
+    messagesContainer.insertAdjacentHTML('beforeend', `
+      <div class="chat-message assistant">
+        ${formatAssistantReply(response.reply)}
+        ${sourcesHtml}
+      </div>
+    `);
+  } catch (error) {
+    removeTypingIndicator(typingId);
+    messagesContainer.insertAdjacentHTML('beforeend', `
+      <div class="chat-message assistant">
+        <p>RightPath AI is temporarily unavailable. Please try again shortly.</p>
+      </div>
+    `);
+  } finally {
+    if (input) input.disabled = false;
+    if (submitBtn) submitBtn.disabled = false;
+    $$('.prompt-chip').forEach(chip => { chip.disabled = false; });
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+}
+
+async function submitPayerAssistantForm(event) {
+  event.preventDefault();
+  const input = $('#payer-assistant-input');
+  const questionText = input.value.trim();
+  if (!questionText) return;
+  input.value = '';
+  await submitPayerAssistantQuestion(questionText);
 }
 
 /**
@@ -2370,15 +2613,32 @@ function bindEvents() {
       selectRecommendedProvider(selectProviderBtn);
     }
 
+    const openChatBtn = event.target.closest('[data-open-chat]');
+    if (openChatBtn) {
+      event.preventDefault();
+      openChat();
+    }
+
+    const assistantPromptChip = event.target.closest('[data-assistant-prompt]');
+    if (assistantPromptChip && !assistantPromptChip.disabled) {
+      event.preventDefault();
+      submitPayerAssistantQuestion(assistantPromptChip.dataset.assistantPrompt);
+    }
+
     if (event.target.closest('[data-close-panel]') || event.target === $('#panel-backdrop')) {
       closeMember();
+      closeChat();
       $('#sidebar-nav')?.classList.remove('open');
     }
 
     if (event.target.closest('[data-close-chat]')) {
-      $('#chat-panel')?.classList.remove('open');
+      closeChat();
     }
   });
+
+  // RightPath AI chat drawer (patient) and Payer Intelligence Assistant form
+  $('#chat-form')?.addEventListener('submit', submitChat);
+  $('#payer-assistant-form')?.addEventListener('submit', submitPayerAssistantForm);
 
   // Mobile sidebar toggle
   $('#sidebar-toggle')?.addEventListener('click', () => {

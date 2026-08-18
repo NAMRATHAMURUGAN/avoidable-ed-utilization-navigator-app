@@ -603,31 +603,33 @@
           </div>
         </section>
 
-        <!-- VIEW 10: PAYER INTELLIGENCE ASSISTANT (placeholder entry point only) -->
+        <!-- VIEW 10: PAYER INTELLIGENCE ASSISTANT -->
         <section id="assistant-view" class="view">
           <div class="page-header">
             <div>
               <p class="eyebrow">Payer Intelligence</p>
               <h1>Payer Intelligence Assistant</h1>
-              <p class="subtitle">Ask questions about utilization patterns, member risk, interventions and cost-reduction opportunities.</p>
+              <p class="subtitle">Ask questions about RightPath activity, utilization patterns, cost opportunities, and approved healthcare guidance.</p>
             </div>
           </div>
           <div class="card">
-            <div class="empty-state">
-              <div class="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
-              </div>
-              <h3>Payer Intelligence Assistant</h3>
-              <p class="muted" style="margin-bottom: 4px;">Ask questions about:</p>
-              <ul style="text-align: left; display: inline-block; margin: 0 0 14px 0; color: var(--muted); font-size: 14px; line-height: 1.7;">
-                <li>utilization patterns</li>
-                <li>high-priority members</li>
-                <li>ML utilization signals</li>
-                <li>care-management opportunities</li>
-                <li>program outcomes</li>
-              </ul>
-              <p><strong>Gemini + Pinecone RAG integration pending.</strong></p>
+            <div class="prompt-chip-row">
+              <button type="button" class="prompt-chip" data-assistant-prompt="Summarize current RightPath activity">Summarize current RightPath activity</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="Which care pathway is most used?">Which care pathway is most used?</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="Explain the current utilization opportunity">Explain the current utilization opportunity</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="What factors contribute to avoidable ED utilization?">What factors contribute to avoidable ED utilization?</button>
             </div>
+
+            <div id="payer-assistant-messages" class="chat-messages-inline" style="margin-top: 16px;">
+              <div class="chat-message assistant">
+                <p>Hello! I'm the RightPath Payer Intelligence Assistant. I answer using aggregate CMS and RightPath analytics plus approved knowledge-base context only -- I never see raw patient complaints, conversations, or identifying information.</p>
+              </div>
+            </div>
+
+            <form id="payer-assistant-form" class="chat-form">
+              <input id="payer-assistant-input" type="text" class="input-control" required placeholder="Ask RightPath AI a question..." />
+              <button type="submit" id="payer-assistant-submit" class="button primary">Ask RightPath AI</button>
+            </form>
           </div>
         </section>
 

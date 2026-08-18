@@ -8,6 +8,7 @@ from werkzeug.exceptions import HTTPException
 
 from backend.config import get_security_settings
 from backend.routes.analytics import analytics_blueprint, payer_analytics_blueprint
+from backend.routes.assistant import assistant_blueprint
 from backend.routes.auth import auth_blueprint
 from backend.routes.ml_results import ml_results_blueprint
 from backend.routes.navigation import navigation_blueprint
@@ -49,6 +50,7 @@ def create_app() -> Flask:
     app.register_blueprint(navigation_blueprint)
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(profile_blueprint)
+    app.register_blueprint(assistant_blueprint)
 
     @app.after_request
     def set_security_headers(response):
