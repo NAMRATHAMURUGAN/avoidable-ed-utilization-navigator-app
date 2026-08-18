@@ -7,17 +7,19 @@ from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import HTTPException
 
 from backend.config import get_security_settings
-from backend.routes.analytics import analytics_blueprint
+from backend.routes.analytics import analytics_blueprint, payer_analytics_blueprint
+from backend.routes.assistant import assistant_blueprint
 from backend.routes.auth import auth_blueprint
 from backend.routes.ml_results import ml_results_blueprint
 from backend.routes.navigation import navigation_blueprint
 from backend.routes.patients import patients_blueprint
+from backend.routes.profile import profile_blueprint
 from backend.routes.providers import providers_blueprint
 from backend.routes.triage import triage_blueprint
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_DIRECTORY = PROJECT_ROOT / "public"
+FRONTEND_DIRECTORY = PROJECT_ROOT / "frontend"
 
 
 def create_app() -> Flask:
@@ -42,10 +44,13 @@ def create_app() -> Flask:
     app.register_blueprint(ml_results_blueprint)
     app.register_blueprint(patients_blueprint)
     app.register_blueprint(analytics_blueprint)
+    app.register_blueprint(payer_analytics_blueprint)
     app.register_blueprint(providers_blueprint)
     app.register_blueprint(triage_blueprint)
     app.register_blueprint(navigation_blueprint)
     app.register_blueprint(auth_blueprint)
+    app.register_blueprint(profile_blueprint)
+    app.register_blueprint(assistant_blueprint)
 
     @app.after_request
     def set_security_headers(response):
@@ -76,16 +81,16 @@ def create_app() -> Flask:
 
     @app.get("/")
     def frontend_index():
-        return send_from_directory(PUBLIC_DIRECTORY, "index.html")
+        return send_from_directory(FRONTEND_DIRECTORY, "index.html")
 
     @app.get("/<path:frontend_path>")
     def frontend_fallback(frontend_path: str):
         """Return the frontend shell without masking unmatched API requests."""
         if frontend_path == "api" or frontend_path.startswith("api/"):
             abort(404)
-        if (PUBLIC_DIRECTORY / frontend_path).is_file():
-            return send_from_directory(PUBLIC_DIRECTORY, frontend_path)
-        return send_from_directory(PUBLIC_DIRECTORY, "index.html")
+        if (FRONTEND_DIRECTORY / frontend_path).is_file():
+            return send_from_directory(FRONTEND_DIRECTORY, frontend_path)
+        return send_from_directory(FRONTEND_DIRECTORY, "index.html")
 
     return app
 
@@ -94,4 +99,9 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # threaded=True: the single-threaded default dev server was observed to
+    # reset the connection (WinError 10054) on Windows when sending larger
+    # JSON responses (e.g. GET /api/patients' full 8,671-member payload),
+    # even with no concurrent requests. This only affects how the local
+    # development server is bootstrapped -- no route/business logic changes.
+    app.run(host="0.0.0.0", port=5000, threaded=True)

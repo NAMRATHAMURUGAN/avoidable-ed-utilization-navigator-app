@@ -10,8 +10,8 @@ A safety-first healthcare navigation product with two experiences: a consumer-fa
 - **Database**: PostgreSQL, via SQLAlchemy models in `backend/models/`. The database is populated from offline-trained ML artifacts by `backend/ingest_ml_data.py` and currently holds real member, utilization, XGBoost prediction, and anomaly data (~8,671 members and related records).
 - **ML**: XGBoost (utilization-risk classification) and Isolation Forest (anomaly detection) are trained offline (`src/train_risk_model.py`, `src/train_anomaly_model.py`) and their outputs are ingested into Postgres. The frontend never shows raw probabilities or anomaly scores — only categorical risk badges (High / Moderate / Low), and only in the Payer experience.
 - **Safety Engine**: `backend/safety/engine.py` and `backend/safety/rules.py` are a deterministic, dependency-free rule engine (no ML, no database, no network) that is the hard safety boundary for the `/api/triage` endpoint. It is a verified behavioral parity port of the original TypeScript engine in `src/services/safetyEngine.ts`.
-- **Frontend**: Plain HTML5, CSS3, and vanilla ES module JavaScript (`public/`), served directly by Flask. No build step, framework, or component library.
-- **Provider / location discovery**: Not yet implemented against a real data source. The "Find care near you" screen shows an honest "integration pending configuration" state rather than fabricated hospitals, clinics, or appointment slots. It is architected to be backed by Google Maps / Places once credentials are configured — no such integration exists yet.
+- **Frontend**: Plain HTML5, CSS3, and vanilla ES module JavaScript (`frontend/`), served directly by Flask. No build step, framework, or component library.
+- **Provider / location discovery**: The "Find care near you" screen is backed by live, real data sources: urgent-care/hospital facility discovery via the OpenStreetMap Overpass API (no API key required), turn-by-turn driving distance/duration via OpenRouteService (requires `OPENROUTESERVICE_API_KEY`; the route step returns an honest "temporarily unavailable" error if that key is not configured, rather than a fabricated route), and non-urgent-care provider types (telehealth, primary care, retail clinic) via the real, database-backed `Provider` table through `GET /api/providers`.
 - **RAG / knowledge base**: The approved Markdown knowledge base can be embedded/indexed offline and retrieved from Pinecone through an isolated RAG service. It is not part of Flask startup; Gemini response generation and Flask integration are not implemented. See [`docs/rag_ingestion.md`](docs/rag_ingestion.md).
 
 ## Product experiences
@@ -23,7 +23,7 @@ A safety-first healthcare navigation product with two experiences: a consumer-fa
 ## Architecture
 
 ```text
-public/ (HTML, CSS, vanilla JavaScript ES modules)
+frontend/ (HTML, CSS, vanilla JavaScript ES modules)
         |
         v
 Flask API + static server (backend/app.py)
@@ -112,7 +112,7 @@ Raw and processed CSV data are intentionally ignored by Git (claims-derived file
 ## Project layout
 
 ```text
-public/                  Live frontend: plain HTML/CSS/vanilla JavaScript
+frontend/                Live frontend: plain HTML/CSS/vanilla JavaScript
 backend/                 Flask API, services, repositories, SQLAlchemy models, Safety Engine
 backend/safety/          Deterministic emergency-detection boundary (do not weaken)
 backend/tests/           API, safety-engine, and navigation-history test suites

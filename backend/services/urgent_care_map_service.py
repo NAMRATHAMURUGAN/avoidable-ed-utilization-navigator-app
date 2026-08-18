@@ -11,6 +11,12 @@ import requests
 
 OVERPASS_URL = "https://lz4.overpass-api.de/api/interpreter"
 OVERPASS_FALLBACK_URL = "https://overpass.kumi.systems/api/interpreter"
+# Both Overpass mirrors require a descriptive, non-generic User-Agent
+# identifying the application -- confirmed directly: the previous bare
+# "avoidable-ed-utilization-navigator/1.0" was rejected/rate-limited by both
+# mirrors, while this format (app name + version + short purpose) succeeds.
+# No secrets, API keys, or patient/beneficiary identifiers belong here.
+OVERPASS_USER_AGENT = "RightPath/1.0 (healthcare navigation prototype)"
 ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
 DEFAULT_RADIUS_METERS = 5_000
 MAX_RADIUS_METERS = 15_000
@@ -140,7 +146,7 @@ def discover_urgent_care_facilities(
             response = requests.post(
                 overpass_url,
                 data={"data": query},
-                headers={"User-Agent": "avoidable-ed-utilization-navigator/1.0"},
+                headers={"User-Agent": OVERPASS_USER_AGENT},
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
             response.raise_for_status()

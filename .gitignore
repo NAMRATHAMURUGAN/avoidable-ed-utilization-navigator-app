@@ -88,3 +88,5 @@ Thumbs.db
 
 .codex/
 .agents/
+# Local PostgreSQL backups
+*.dump

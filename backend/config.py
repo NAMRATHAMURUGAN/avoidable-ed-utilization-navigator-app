@@ -100,3 +100,34 @@ def get_rag_settings() -> RagSettings:
         embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "gemini-embedding-2"),
         embedding_dimension=embedding_dimension,
     )
+
+
+# gemini-2.5-flash was retired for new callers during this project's
+# lifetime (the live API returns 404 NOT_FOUND with this exact guidance);
+# gemini-3.6-flash is the current Flash model as of this writing. Override
+# via GEMINI_GENERATION_MODEL without a code change if this drifts again.
+DEFAULT_GEMINI_GENERATION_MODEL = "gemini-3.6-flash"
+
+
+@dataclass(frozen=True)
+class AssistantSettings:
+    """Configuration for the Gemini text-generation AI assistant layer.
+
+    Deliberately separate from RagSettings: the assistant only ever requires
+    GEMINI_API_KEY to answer a question (RAG/Pinecone context is optional and
+    additive for the payer assistant only -- see backend/routes/assistant.py).
+    """
+
+    gemini_api_key: str
+    generation_model: str
+
+
+def get_assistant_settings() -> AssistantSettings:
+    """Read AI-assistant configuration without logging any secret values."""
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key or gemini_api_key.startswith("your_"):
+        raise RuntimeError(
+            "GEMINI_API_KEY must be set to use the AI assistant. See .env.example."
+        )
+    generation_model = os.getenv("GEMINI_GENERATION_MODEL") or DEFAULT_GEMINI_GENERATION_MODEL
+    return AssistantSettings(gemini_api_key=gemini_api_key, generation_model=generation_model)

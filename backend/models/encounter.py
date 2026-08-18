@@ -21,6 +21,7 @@ from backend.models.model_run import JSONType
 
 if TYPE_CHECKING:
     from backend.models.member import Member
+    from backend.models.user import User
 
 
 class TriageEncounter(Base):
@@ -35,6 +36,14 @@ class TriageEncounter(Base):
     )
     member_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("members.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Identity/persistence linkage only: which login identity created this
+    # encounter, so an authenticated PATIENT (or PAYER) can retrieve their
+    # own history after a refresh/new session. This is deliberately separate
+    # from member_id (CMS beneficiary linkage), which stays PAYER-only/
+    # ML-enrichment-gated and is completely unaffected by this column.
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     chief_complaint: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -53,6 +62,7 @@ class TriageEncounter(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 
     member: Mapped[Member | None] = relationship()
+    user: Mapped[User | None] = relationship()
     navigation_actions: Mapped[list[NavigationAction]] = relationship(
         back_populates="encounter", cascade="all, delete-orphan"
     )
@@ -74,6 +84,10 @@ class NavigationAction(Base):
     member_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("members.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Identity/persistence linkage only -- see TriageEncounter.user_id above.
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
     selected_provider_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     selected_acuity: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -82,3 +96,4 @@ class NavigationAction(Base):
 
     encounter: Mapped[TriageEncounter | None] = relationship(back_populates="navigation_actions")
     member: Mapped[Member | None] = relationship()
+    user: Mapped[User | None] = relationship()

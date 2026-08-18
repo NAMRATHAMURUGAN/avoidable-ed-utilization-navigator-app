@@ -20,6 +20,7 @@ from backend.models import (
     UtilizationAnomalyResult,
     XGBoostUtilizationPrediction,
 )
+from backend.services.auth_service import register_user
 
 
 @pytest.fixture
@@ -34,12 +35,24 @@ def client_and_session():
 
     app = create_app()
     app.config["TESTING"] = True
-    with patch("backend.routes.navigation.session_scope", session_scope):
-        yield app.test_client(), session
+    with patch("backend.routes.navigation.session_scope", session_scope), \
+         patch("backend.services.auth_service.session_scope", session_scope):
+        client = app.test_client()
+        yield client, session
 
     session.close()
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+def _login_as_payer(client, session: Session, email: str = "payer-recs@example.com") -> None:
+    """Provision+login a PAYER user directly via the service layer, since
+    POST /api/auth/register only ever creates a PATIENT account. The caller
+    must already be inside the client_and_session fixture's session_scope
+    patches (both navigation and auth_service)."""
+    register_user(email=email, password="password123", role="PAYER", session=session)
+    response = client.post("/api/auth/login", json={"email": email, "password": "password123"})
+    assert response.status_code == 200, response.get_json()
 
 
 def add_member_with_snapshot(session: Session, member_id: int, bene_id: str) -> MemberUtilizationSnapshot:
@@ -142,6 +155,7 @@ def test_recommendations_use_latest_runs_and_resolve_beneficiary_id(client_and_s
         ]
     )
     session.commit()
+    _login_as_payer(client, session)
 
     response = client.get("/api/navigation/members/CMS-NAV-10/recommendations")
 
@@ -185,6 +199,7 @@ def test_recommendations_ignore_outputs_when_current_model_run_is_absent(client_
         ]
     )
     session.commit()
+    _login_as_payer(client, session)
 
     response = client.get("/api/navigation/members/11/recommendations")
 
@@ -193,9 +208,31 @@ def test_recommendations_ignore_outputs_when_current_model_run_is_absent(client_
 
 
 def test_recommendations_return_404_for_unknown_member(client_and_session):
-    client, _ = client_and_session
+    client, session = client_and_session
+    _login_as_payer(client, session)
 
     response = client.get("/api/navigation/members/does-not-exist/recommendations")
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Member not found"}
+
+
+def test_recommendations_rejects_unauthenticated_caller(client_and_session):
+    client, _ = client_and_session
+
+    response = client.get("/api/navigation/members/10/recommendations")
+
+    assert response.status_code == 401
+
+
+def test_recommendations_rejects_patient_role(client_and_session):
+    client, session = client_and_session
+    register_user(email="patient-recs@example.com", password="password123", role="PATIENT", session=session)
+    login_response = client.post(
+        "/api/auth/login", json={"email": "patient-recs@example.com", "password": "password123"}
+    )
+    assert login_response.status_code == 200, login_response.get_json()
+
+    response = client.get("/api/navigation/members/10/recommendations")
+
+    assert response.status_code == 403

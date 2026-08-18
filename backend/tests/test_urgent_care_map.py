@@ -84,6 +84,56 @@ class UrgentCareMapRouteTests(unittest.TestCase):
         with self.assertRaisesRegex(map_service.UrgentCareMapError, "temporarily unavailable"):
             map_service.discover_urgent_care_facilities(41.88, -87.63)
 
+    @patch("backend.services.urgent_care_map_service.requests.post")
+    def test_overpass_requests_include_a_meaningful_user_agent(self, post: Mock) -> None:
+        """Both mirrors previously rejected/rate-limited a generic User-Agent
+        (406 from the primary, 429 "include a meaningful User-Agent string"
+        from the fallback). Locks in that every Overpass request -- primary
+        and fallback -- sends a descriptive, non-empty User-Agent, and never
+        leaks a secret/API key/patient identifier in it."""
+        upstream = Mock()
+        upstream.json.return_value = {"elements": []}
+        post.return_value = upstream
+
+        map_service.discover_urgent_care_facilities(41.88, -87.63)
+
+        post.assert_called_once()
+        user_agent = post.call_args.kwargs["headers"]["User-Agent"]
+        self.assertEqual(user_agent, map_service.OVERPASS_USER_AGENT)
+        self.assertGreater(len(user_agent), len("RightPath"))  # not a bare/empty string
+        for secret_marker in ("key", "token", "bene", "patient"):
+            self.assertNotIn(secret_marker, user_agent.lower())
+
+    @patch("backend.services.urgent_care_map_service.requests.post")
+    def test_primary_failure_falls_back_to_secondary_overpass_mirror_with_same_user_agent(self, post: Mock) -> None:
+        """Preserves the existing primary -> fallback behavior: a primary
+        failure (e.g. the 406 seen from the lz4 mirror) is retried against
+        OVERPASS_FALLBACK_URL, which still carries the same meaningful
+        User-Agent, and a successful fallback result is used normally."""
+        primary_failure = Mock()
+        primary_failure.raise_for_status.side_effect = requests.HTTPError("406 Not Acceptable")
+        fallback_success = Mock()
+        fallback_success.json.return_value = {
+            "elements": [
+                {
+                    "type": "node", "id": 9, "lat": 41.9, "lon": -87.6,
+                    "tags": {"name": "Fallback Urgent Care"},
+                },
+            ]
+        }
+        post.side_effect = [primary_failure, fallback_success]
+
+        result = map_service.discover_urgent_care_facilities(41.88, -87.63)
+
+        self.assertEqual(post.call_count, 2)
+        first_call_url = post.call_args_list[0].args[0]
+        second_call_url = post.call_args_list[1].args[0]
+        self.assertEqual(first_call_url, map_service.OVERPASS_URL)
+        self.assertEqual(second_call_url, map_service.OVERPASS_FALLBACK_URL)
+        for call in post.call_args_list:
+            self.assertEqual(call.kwargs["headers"]["User-Agent"], map_service.OVERPASS_USER_AGENT)
+        self.assertEqual(result["facilities"][0]["name"], "Fallback Urgent Care")
+
     @patch("backend.routes.navigation.calculate_urgent_care_route")
     def test_route_returns_normalized_ors_response_without_key(self, route: Mock) -> None:
         route.return_value = {

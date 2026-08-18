@@ -60,6 +60,10 @@ def member_analytical_result_to_dict(result: MemberAnalyticalResult) -> dict[str
         "totalEdSpend12m": float(snapshot.total_ed_related_cost) if snapshot else 0.0,
         "avoidableEdSpend12m": 0.0,  # DEFERRED: Avoidable spend requires claims detail
         "riskLevel": risk_level,
+        # Categorical anomaly status only (never the raw Isolation Forest
+        # score) -- consistent with riskLevel, this is a population-
+        # segmentation signal, not a diagnosis.
+        "isAnomalous": bool(anom_flag),
         "riskLevelInterpretation": (
             "This priority signal reflects historical high-utilization-pattern and "
             "utilization-anomaly data only. It is not a medical necessity determination, "
@@ -71,10 +75,28 @@ def member_analytical_result_to_dict(result: MemberAnalyticalResult) -> dict[str
     }
 
 
+def _utilization_band_for_visit_count(count: Any) -> str:
+    try:
+        visits = int(count)
+    except (TypeError, ValueError):
+        return "6+"
+    if visits == 0:
+        return "0"
+    if visits == 1:
+        return "1"
+    if 2 <= visits <= 3:
+        return "2-3"
+    if 4 <= visits <= 5:
+        return "4-5"
+    return "6+"
+
+
 def _execute_get_patients(
     session: Session,
     risk: str | None = None,
     search: str | None = None,
+    band: str | None = None,
+    anomaly: str | None = None,
 ) -> list[dict[str, Any]]:
     member_repo = MemberRepository(session)
     run_repo = ModelRunRepository(session)
@@ -96,6 +118,15 @@ def _execute_get_patients(
         risk_lower = risk.lower()
         patient_dicts = [p for p in patient_dicts if p.get("riskLevel", "").lower() == risk_lower]
 
+    if band and isinstance(band, str):
+        patient_dicts = [
+            p for p in patient_dicts if _utilization_band_for_visit_count(p.get("edVisitCount12m")) == band
+        ]
+
+    if anomaly and isinstance(anomaly, str):
+        want_anomalous = anomaly.upper() == "ANOMALOUS"
+        patient_dicts = [p for p in patient_dicts if bool(p.get("isAnomalous")) == want_anomalous]
+
     if search and isinstance(search, str):
         q = search.lower()
         filtered: list[dict[str, Any]] = []
@@ -110,6 +141,46 @@ def _execute_get_patients(
         patient_dicts = filtered
 
     return patient_dicts
+
+
+def get_patients_page(
+    risk: str | None = None,
+    search: str | None = None,
+    band: str | None = None,
+    anomaly: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    session: Session | None = None,
+) -> dict[str, Any]:
+    """Return one page of the database-backed patient cohort.
+
+    Exists alongside (not instead of) get_patients(): the Werkzeug
+    development server was observed to reset the connection on Windows when
+    sending the full ~7MB unpaginated payload for the current 8,671-member
+    population, so any UI paging/scrolling through the cohort should call
+    this instead of fetching everything at once. Filtering logic is
+    identical to get_patients(); only the page slice differs.
+    """
+
+    def _execute(sess: Session) -> dict[str, Any]:
+        all_matching = _execute_get_patients(sess, risk=risk, search=search, band=band, anomaly=anomaly)
+        total = len(all_matching)
+        safe_page_size = max(1, min(page_size, 200))
+        total_pages = max(1, -(-total // safe_page_size)) if total else 1
+        safe_page = max(1, min(page, total_pages))
+        start = (safe_page - 1) * safe_page_size
+        return {
+            "items": all_matching[start : start + safe_page_size],
+            "total": total,
+            "page": safe_page,
+            "pageSize": safe_page_size,
+            "totalPages": total_pages,
+        }
+
+    if session is not None:
+        return _execute(session)
+    with session_scope() as sess:
+        return _execute(sess)
 
 
 def get_patients(

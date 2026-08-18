@@ -4,17 +4,64 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#123047" />
-    <title>Care Navigation Navigator — Healthcare Decision Support</title>
+    <title>RightPath — Avoidable Emergency Department Utilization Navigator</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   </head>
   <body>
-    <!-- AUTH SCREEN: shown until GET /api/auth/me confirms a session; app-shell stays hidden until then -->
-    <div id="auth-screen">
-      <div class="card" style="max-width: 420px; margin: 64px auto;">
+    <!-- PORTAL SELECTION SCREEN: shown first for any unauthenticated visitor.
+         The selected portal is UI context ONLY -- it never grants
+         authorization. After login, the authenticated backend role (from
+         GET/POST /api/auth/*) is the sole source of truth for which
+         workspace is entered (see enterAuthenticatedWorkspace in app.js). -->
+    <div id="portal-select-screen">
+      <div class="portal-select-shell">
+        <div class="portal-select-intro">
+          <span class="brand-mark portal-select-mark">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 11l18.5-9-9 18.5-2.2-7.3L3 11z"/></svg>
+          </span>
+          <h1 class="portal-select-heading">Right<strong>Path</strong></h1>
+          <p class="portal-select-tagline">Healthcare Navigation</p>
+          <p class="subtitle portal-select-subtitle">Avoidable Emergency Department Utilization Navigator</p>
+          <p class="eyebrow portal-select-eyebrow">Choose your portal</p>
+        </div>
+
+        <div class="portal-select-grid">
+          <div class="card portal-select-card portal-select-card--patient">
+            <span class="portal-select-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <div class="card-header">
+              <h2>Patient / Member</h2>
+              <p class="muted">Access symptom assessment, care recommendations, provider navigation, profile and care history.</p>
+            </div>
+            <button type="button" class="button primary full-width" data-portal-select="PATIENT">Continue as Patient / Member</button>
+          </div>
+          <div class="card portal-select-card portal-select-card--payer">
+            <span class="portal-select-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
+            </span>
+            <div class="card-header">
+              <h2>Healthcare Manager / Payer Admin</h2>
+              <p class="muted">Analyze emergency department utilization, identify priority members, review ML insights and coordinate interventions.</p>
+            </div>
+            <button type="button" class="button primary full-width" data-portal-select="PAYER">Continue as Healthcare Manager / Payer Admin</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH SCREEN: shown after a portal is selected, or immediately once
+         GET /api/auth/me confirms an existing session is invalid; app-shell
+         stays hidden until a session is confirmed. -->
+    <div id="auth-screen" class="role-hidden">
+      <div class="card auth-card">
+        <p class="auth-back-row">
+          <button type="button" id="back-to-portal-select" class="text-button">&larr; Back to portal selection</button>
+        </p>
         <div class="card-header">
           <h2 id="auth-screen-title">Log In</h2>
-          <p id="auth-screen-subtitle" class="muted">Sign in to continue to Care Navigation Navigator.</p>
+          <p id="auth-screen-subtitle" class="muted">Sign in to continue to RightPath.</p>
         </div>
 
         <div id="auth-error" class="notice emergency role-hidden"></div>
@@ -44,7 +91,11 @@
           <button type="submit" class="button primary full-width">Create Account</button>
         </form>
 
-        <p class="muted" style="margin-top: 16px; text-align: center;">
+        <p id="payer-registration-note" class="muted role-hidden" style="font-size: 13px;">
+          Payer / Healthcare Manager accounts are provisioned separately by an administrator and are not available through public self-registration.
+        </p>
+
+        <p id="auth-toggle-row" class="muted" style="margin-top: 16px; text-align: center;">
           <button type="button" id="auth-toggle-mode" class="text-button">New here? Create an account</button>
         </p>
       </div>
@@ -54,7 +105,7 @@
     <div id="app-shell" class="role-hidden">
     <!-- Emergency Warning Strip -->
     <div class="safety-strip" role="region" aria-label="Emergency warning">
-      <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 3-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       <span><strong>Medical Emergency Notice:</strong> If you are experiencing chest pain, severe shortness of breath, stroke symptoms, or loss of consciousness, call <strong>911</strong> or go to the nearest emergency room immediately.</span>
     </div>
 
@@ -66,9 +117,9 @@
         </button>
         <a class="brand" href="#triage" data-route="triage">
           <span class="brand-mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 11l18.5-9-9 18.5-2.2-7.3L3 11z"/></svg>
           </span>
-          <span class="brand-text">Care Navigation<br /><strong>Navigator</strong></span>
+          <span class="brand-text">Right<strong>Path</strong></span>
         </a>
         <div class="workspace-divider"></div>
         <span id="workspace-title" class="workspace-title">Patient Portal</span>
@@ -97,6 +148,21 @@
 
       <!-- Main Content Area -->
       <main class="main-content">
+
+        <!-- PORTAL IDENTITY BANNER: always-visible, role-aware masthead so
+             "Patient Portal" / "Payer Portal" reads as a prominent part of
+             the main content header on every page, not a small topbar
+             label. Text is set by setRole() in app.js; purely presentational,
+             no routing/data behavior. -->
+        <div id="portal-banner" class="portal-banner" data-role="PATIENT">
+          <span id="portal-banner-icon" class="portal-banner-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </span>
+          <div>
+            <p id="portal-banner-kicker" class="portal-banner-kicker">Patient Portal</p>
+            <p id="portal-banner-tagline" class="portal-banner-tagline">Personalized Care Navigation</p>
+          </div>
+        </div>
 
         <!-- VIEW 1: PATIENT MY HEALTH & TRIAGE -->
         <section id="triage-view" class="view active">
@@ -208,6 +274,7 @@
                 <h2>Personal Information</h2>
                 <p class="muted">Self-entered details (distinguished from Medicare member records).</p>
               </div>
+              <div id="profile-status-banner"></div>
               <form id="patient-self-profile-form">
                 <div class="form-group">
                   <label for="self-patient-name">Full Name *</label>
@@ -277,26 +344,11 @@
           </div>
         </section>
 
-        <!-- VIEW 3: CARE OPTIONS / FIND CARE -->
-        <section id="providers-view" class="view">
-          <div class="page-header">
-            <div>
-              <p class="eyebrow">Care Discovery</p>
-              <h1>Find care near you</h1>
-              <p class="subtitle">Location-based provider discovery will use Google Maps / Places integration.</p>
-            </div>
-          </div>
-
-          <div class="card integration-pending-card">
-            <div class="empty-state">
-              <div class="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              </div>
-              <h3>Integration pending configuration</h3>
-              <p>Real-time hospital, urgent care, and clinic search will appear here once Google Maps / Places is connected. No placeholder locations are shown in the meantime.</p>
-            </div>
-          </div>
-        </section>
+        <!-- VIEW 3: CARE OPTIONS / FIND CARE
+             Retired the static "Google Maps / Places pending" placeholder
+             (formerly #providers-view / route "providers"): the sidebar's
+             "Find Care Near You" now opens the live urgent-care map below
+             instead. See #urgent-care-map-view. -->
 
         <!-- URGENT CARE ONLY: live location, OSM facility discovery, and ORS routing -->
         <section id="urgent-care-map-view" class="view">
@@ -345,8 +397,8 @@
         <section id="dashboard-view" class="view">
           <div class="page-header">
             <div>
-              <p id="dashboard-eyebrow" class="eyebrow">Operations Console</p>
-              <h1 id="dashboard-title">Population Health Overview</h1>
+              <p id="dashboard-eyebrow" class="eyebrow">Payer Intelligence</p>
+              <h1 id="dashboard-title">RightPath Payer Command Center</h1>
               <p id="dashboard-subtitle" class="subtitle">Database-backed aggregate utilization metrics and clinical prioritization signals.</p>
             </div>
           </div>
@@ -358,32 +410,92 @@
             <div class="stat-card skeleton-stat"></div>
           </div>
 
-          <div class="two-column dashboard-grid">
-            <!-- Prioritization Queue Table / List -->
-            <div class="card">
-              <div class="card-header flex-between">
-                <div>
-                  <p class="eyebrow">Clinical Queue</p>
-                  <h2>Prioritization Queue</h2>
-                </div>
-                <button class="text-button" data-route="cohort">View All Cohort &rarr;</button>
+          <!-- Prioritization Queue Table / List -->
+          <div class="card">
+            <div class="card-header flex-between">
+              <div>
+                <p class="eyebrow">Clinical Queue</p>
+                <h2>Prioritization Queue</h2>
               </div>
-              <div id="priority-list" class="member-queue-list">
-                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
-              </div>
+              <button class="text-button" data-route="cohort">View All Cohort &rarr;</button>
             </div>
+            <div id="priority-list" class="member-queue-list">
+              <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+            </div>
+          </div>
 
-            <!-- Historical Time of Day Signals -->
+          <!-- Risk x Anomaly Priority Matrix -->
+          <div class="card" style="margin-top: 24px;">
+            <div class="card-header">
+              <p class="eyebrow">Decision Support</p>
+              <h2>Risk &times; Anomaly Priority Matrix</h2>
+              <p class="muted">Cross-tabulates the historical high-utilization risk category against Isolation Forest anomaly status. Model-based utilization signal, not a clinical diagnosis.</p>
+            </div>
+            <div id="priority-matrix" class="priority-matrix-grid">
+              <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+            </div>
+          </div>
+
+          <!-- RIGHTPATH PROGRAM: unified activity + potential-impact section.
+               Real, database-backed patient-app activity (triage_encounters /
+               navigation_actions) from GET /api/payer/analytics/rightpath.
+               Additive to, and kept visually/conceptually separate from, the
+               CMS/member analytics above. No causal "prevented" or "saved"
+               claim is made anywhere in this section. -->
+          <div class="card-header" style="margin-top: 32px;">
+            <p class="eyebrow">RightPath Program</p>
+            <h2>RightPath Program Activity &amp; Impact</h2>
+            <p class="muted">Population-level activity from the patient portal and its potential utilization opportunity. Recommendations are distinct from confirmed navigation actions.</p>
+          </div>
+
+          <p class="eyebrow" style="margin: 0 0 10px 0;">Activity</p>
+          <div id="rightpath-activity-stat-grid" class="stat-grid-container">
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+          </div>
+
+          <p class="eyebrow" style="margin: 20px 0 10px 0;">Potential Impact</p>
+          <div id="rightpath-impact-stat-grid" class="stat-grid-container">
+            <div class="stat-card skeleton-stat"></div>
+            <div class="stat-card skeleton-stat"></div>
+          </div>
+
+          <div class="chart-grid">
             <div class="card">
               <div class="card-header">
-                <p class="eyebrow">Care Access Patterns</p>
-                <h2>Historical Time of Day Signal</h2>
+                <p class="eyebrow">Safety-Engine Output</p>
+                <h2>Care Recommendation Distribution</h2>
+                <p class="muted">Recommended acuity from the deterministic safety engine, across all recorded assessments.</p>
               </div>
-              <div id="time-pattern" class="bar-chart-container">
-                <div class="loading-spinner-wrap"><div class="spinner"></div></div>
-              </div>
-              <p class="muted caption-note">Time patterns illustrate historical ED access peaks; they do not dictate emergency necessity for current symptoms.</p>
+              <div id="rightpath-acuity-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-acuity"></canvas></div>
             </div>
+            <div class="card">
+              <div class="card-header">
+                <p class="eyebrow">Confirmed Navigation</p>
+                <h2>Confirmed Care Pathway Distribution</h2>
+                <p class="muted">Care pathways patients actually selected or booked -- distinct from the recommendation above.</p>
+              </div>
+              <div id="rightpath-pathway-chart-wrap" class="chart-canvas-wrap"><canvas id="chart-rightpath-pathway"></canvas></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+              <p id="rightpath-trend-eyebrow" class="eyebrow">Daily Volume</p>
+              <h2 id="rightpath-trend-heading">RightPath Activity Trend</h2>
+              <p id="rightpath-trend-desc" class="muted">Daily count of triage assessments recorded through RightPath.</p>
+            </div>
+            <div id="rightpath-trend-content" class="chart-canvas-wrap"><canvas id="chart-rightpath-trend"></canvas></div>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+              <p class="eyebrow">Methodology</p>
+              <h2>How Potential Cost Opportunity Is Calculated</h2>
+            </div>
+            <div id="rightpath-impact-methodology"></div>
           </div>
         </section>
 
@@ -391,31 +503,31 @@
         <section id="cohort-view" class="view">
           <div class="page-header">
             <div>
-              <p class="eyebrow">Beneficiary Management</p>
-              <h1>Member Population Directory</h1>
-              <p class="subtitle">Complete database-backed Medicare cohort with ML risk stratification.</p>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Priority Members</h1>
+              <p class="subtitle">Complete database-backed Medicare cohort. Members prioritized using utilization and anomaly signals -- not a clinical diagnosis.</p>
             </div>
           </div>
 
           <!-- 4-Step Primary Care Longitudinal Workflow Card -->
-          <div class="card workflow-card" style="margin-bottom: 24px; background: #f0f7f7; border-color: #bce3df;">
-            <h3 style="margin: 0 0 6px 0; color: var(--teal); font-size: 16px;">Primary Care Connection Workflow</h3>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 10px;">
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">1. Review</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Identify ED Utilization</p>
+          <div class="card workflow-card">
+            <h3 class="workflow-card-title">Primary Care Connection Workflow</h3>
+            <div class="workflow-steps-grid">
+              <div class="workflow-step">
+                <strong>1. Review</strong>
+                <p>Identify ED Utilization</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">2. Outreach</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Care Coordination Contact</p>
+              <div class="workflow-step">
+                <strong>2. Outreach</strong>
+                <p>Care Coordination Contact</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">3. PCP Connect</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Primary Care Link</p>
+              <div class="workflow-step">
+                <strong>3. PCP Connect</strong>
+                <p>Primary Care Link</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">4. Follow Up</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Longitudinal Care</p>
+              <div class="workflow-step">
+                <strong>4. Follow Up</strong>
+                <p>Longitudinal Care</p>
               </div>
             </div>
           </div>
@@ -438,6 +550,28 @@
                   <option value="LOW">Low Priority</option>
                 </select>
               </div>
+              <div class="filter-group">
+                <label for="utilization-band-filter">Utilization Band</label>
+                <select id="utilization-band-filter" class="input-control">
+                  <option value="">All Bands</option>
+                  <option value="0">0 ED visits</option>
+                  <option value="1">1 ED visit</option>
+                  <option value="2-3">2-3 ED visits</option>
+                  <option value="4-5">4-5 ED visits</option>
+                  <option value="6+">6+ ED visits</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="anomaly-filter">Anomaly Status</label>
+                <select id="anomaly-filter" class="input-control">
+                  <option value="">All Members</option>
+                  <option value="ANOMALOUS">Anomalous Only</option>
+                  <option value="NORMAL">Normal Only</option>
+                </select>
+              </div>
+              <div class="filter-group button-align">
+                <button id="reset-cohort-filters" type="button" class="button ghost">Reset Filters</button>
+              </div>
             </div>
           </div>
 
@@ -445,6 +579,79 @@
             <div id="member-table" class="table-responsive">
               <div class="loading-spinner-wrap"><div class="spinner"></div><p>Loading member population...</p></div>
             </div>
+            <div id="member-table-pagination" class="table-pagination-row"></div>
+          </div>
+        </section>
+
+        <!-- VIEW 7: UTILIZATION INSIGHTS (Payer Intelligence) -->
+        <section id="utilization-insights-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Utilization Insights</h1>
+              <p class="subtitle">ML utilization-pattern analysis across the member population, combining historical high-utilization prediction with unsupervised anomaly detection.</p>
+            </div>
+          </div>
+          <div id="utilization-insights-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 8: INTERVENTIONS (Payer Intelligence) -->
+        <section id="interventions-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Interventions</h1>
+              <p class="subtitle">Care-management recommendations informed by historical utilization and ML risk signals -- the workflow, not the model, determines the intervention.</p>
+            </div>
+          </div>
+          <div id="interventions-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 9: COST REDUCTION & PROGRAM OUTCOMES (Payer Intelligence) -->
+        <section id="cost-reduction-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Cost Reduction &amp; Program Outcomes</h1>
+              <p class="subtitle">Aggregate ED utilization and spend. Avoidability and savings metrics are shown honestly once the analytics layer that computes them is available.</p>
+            </div>
+          </div>
+          <div id="cost-reduction-content">
+            <div class="loading-spinner-wrap"><div class="spinner"></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 10: PAYER INTELLIGENCE ASSISTANT -->
+        <section id="assistant-view" class="view">
+          <div class="page-header">
+            <div>
+              <p class="eyebrow">Payer Intelligence</p>
+              <h1>Payer Intelligence Assistant</h1>
+              <p class="subtitle">Ask questions about RightPath activity, utilization patterns, cost opportunities, and approved healthcare guidance.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="prompt-chip-row">
+              <button type="button" class="prompt-chip" data-assistant-prompt="Summarize current RightPath activity">Summarize current RightPath activity</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="Which care pathway is most used?">Which care pathway is most used?</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="Explain the current utilization opportunity">Explain the current utilization opportunity</button>
+              <button type="button" class="prompt-chip" data-assistant-prompt="What factors contribute to avoidable ED utilization?">What factors contribute to avoidable ED utilization?</button>
+            </div>
+
+            <div id="payer-assistant-messages" class="chat-messages-inline" style="margin-top: 16px;">
+              <div class="chat-message assistant">
+                <p>Hello! I'm the RightPath Payer Intelligence Assistant. I answer using aggregate CMS and RightPath analytics plus approved knowledge-base context only -- I never see raw patient complaints, conversations, or identifying information.</p>
+              </div>
+            </div>
+
+            <form id="payer-assistant-form" class="chat-form">
+              <input id="payer-assistant-input" type="text" class="input-control" required placeholder="Ask RightPath AI a question..." />
+              <button type="submit" id="payer-assistant-submit" class="button primary">Ask RightPath AI</button>
+            </form>
           </div>
         </section>
 
@@ -467,7 +674,8 @@
       </div>
     </aside>
 
-    <!-- CARE COPILOT CHAT DRAWER (currently unreachable in the UI; the backing /api/chat-copilot endpoint is not implemented on Flask yet) -->
+    <!-- CARE COPILOT CHAT DRAWER -- opens from the "Ask RightPath AI" CTA on a
+         non-emergency triage result; wired to POST /api/patient/assistant. -->
     <aside id="chat-panel" class="chat-panel" aria-hidden="true">
       <div class="panel-header">
         <div>
@@ -495,6 +703,7 @@
 
     <!-- Application Script Entry Point -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin=""></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

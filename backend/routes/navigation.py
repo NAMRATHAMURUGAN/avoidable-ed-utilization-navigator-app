@@ -8,6 +8,15 @@ endpoint requires PAYER. Provider existence is validated against
 ProviderRepository; no mock provider data is seeded on this request path.
 This module also exposes live urgent-care facility discovery, ORS-backed
 driving directions, and database-backed navigation recommendations.
+GET /navigation/members/<id>/recommendations exposes per-member CMS
+utilization/ML-derived detail and is PAYER-only, matching every other
+CMS-Member-keyed endpoint in this application.
+
+GET /navigation/my-history is login-required (any role) and returns only
+the authenticated caller's own encounters/actions, resolved from their
+session identity -- never from a caller-supplied identifier. This is a
+separate, identity-scoped persistence mechanism from the CMS-Member-based
+/patients/<id>/history above; it does not use or alter member_id linkage.
 """
 
 from __future__ import annotations
@@ -16,9 +25,9 @@ from datetime import datetime, timezone
 import re
 from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
-from backend.auth.decorators import role_required
+from backend.auth.decorators import login_required, role_required
 from backend.database import session_scope
 from backend.models.encounter import NavigationAction
 from backend.repositories.encounter_repository import EncounterRepository
@@ -99,6 +108,7 @@ def get_urgent_care_route():
 
 
 @navigation_blueprint.get("/navigation/members/<member_id>/recommendations", strict_slashes=False)
+@role_required("PAYER")
 def get_member_navigation_recommendations(member_id: str):
     """GET care-navigation suggestions based on available historical member data."""
     with session_scope() as session:
@@ -257,6 +267,12 @@ def record_navigation_action():
         action = NavigationAction(
             encounter_id=encounter_id,
             member_id=member_id,
+            # Identity/persistence linkage only, independent of the
+            # PAYER-only member_id linkage above: any authenticated caller's
+            # own action is tagged with their user id. Anonymous callers
+            # continue to record actions exactly as before (user_id stays
+            # None), which is unaffected and unauthorized-by-default.
+            user_id=current_user.id if current_user is not None else None,
             action_type=action_type,
             selected_provider_id=selected_provider_id,
             selected_acuity=selected_acuity,
@@ -327,6 +343,60 @@ def get_patient_history(patient_id: str):
         return jsonify({
             "patientId": str(member_res.member.id),
             "beneficiaryId": member_res.member.bene_id,
+            "totalEncounters": len(encounters_json),
+            "totalActions": len(actions_json),
+            "encounters": encounters_json,
+            "actions": actions_json,
+        })
+
+
+@navigation_blueprint.get("/navigation/my-history", strict_slashes=False)
+@login_required
+def get_my_history():
+    """GET /api/navigation/my-history - Return the authenticated caller's own
+    persistent triage/navigation history.
+
+    Scoped entirely to the session's own identity (``g.current_user``, set by
+    @login_required) -- there is no request parameter for a user id, so a
+    caller can never supply one to retrieve another user's history. This is
+    independent of the CMS-Member-based /patients/<id>/history above.
+    """
+    with session_scope() as session:
+        e_repo = EncounterRepository(session)
+
+        encounters = e_repo.get_user_encounters(g.current_user.id)
+        actions = e_repo.get_user_actions(g.current_user.id)
+
+        encounters_json = [
+            {
+                "encounterId": enc.id,
+                "sessionId": enc.session_id,
+                "chiefComplaint": enc.chief_complaint,
+                "symptomsDuration": enc.symptoms_duration,
+                "associatedSymptoms": enc.associated_symptoms or [],
+                "isEmergency": enc.is_emergency,
+                "recommendedAcuity": enc.recommended_acuity,
+                "urgencyLevel": enc.urgency_level,
+                "recommendedSettingName": enc.recommended_setting_name,
+                "createdAt": enc.created_at.isoformat() if enc.created_at else None,
+            }
+            for enc in encounters
+        ]
+
+        actions_json = [
+            {
+                "actionId": act.id,
+                "encounterId": act.encounter_id,
+                "actionType": act.action_type,
+                "selectedProviderId": act.selected_provider_id,
+                "selectedAcuity": act.selected_acuity,
+                "actionDetails": act.action_details or {},
+                "recordedAt": act.recorded_at.isoformat() if act.recorded_at else None,
+            }
+            for act in actions
+        ]
+
+        return jsonify({
             "totalEncounters": len(encounters_json),
             "totalActions": len(actions_json),
             "encounters": encounters_json,

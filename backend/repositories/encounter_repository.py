@@ -71,6 +71,36 @@ class EncounterRepository:
             self._session.rollback()
             return []
 
+    def get_user_encounters(self, user_id: int) -> list[TriageEncounter]:
+        try:
+            return list(
+                self._session.scalars(
+                    select(TriageEncounter)
+                    .where(TriageEncounter.user_id == user_id)
+                    # id as a tiebreaker: two encounters created in rapid
+                    # succession can otherwise share an identical
+                    # created_at timestamp, making "most recent first"
+                    # non-deterministic on created_at alone.
+                    .order_by(desc(TriageEncounter.created_at), desc(TriageEncounter.id))
+                ).all()
+            )
+        except (ProgrammingError, OperationalError):
+            self._session.rollback()
+            return []
+
+    def get_user_actions(self, user_id: int) -> list[NavigationAction]:
+        try:
+            return list(
+                self._session.scalars(
+                    select(NavigationAction)
+                    .where(NavigationAction.user_id == user_id)
+                    .order_by(desc(NavigationAction.recorded_at), desc(NavigationAction.id))
+                ).all()
+            )
+        except (ProgrammingError, OperationalError):
+            self._session.rollback()
+            return []
+
     def get_encounter_actions(self, encounter_id: int) -> list[NavigationAction]:
         try:
             return list(
