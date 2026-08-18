@@ -17,14 +17,14 @@ from sqlalchemy.orm import Session
 from backend.database import session_scope
 from backend.models.encounter import TriageEncounter
 from backend.repositories.encounter_repository import EncounterRepository
-from backend.repositories.member_repository import MemberRepository
+from backend.repositories.member_repository import MemberAnalyticalResult, MemberRepository
 from backend.repositories.model_run_repository import ModelRunRepository
 from backend.safety.engine import evaluate_safety
 from backend.safety.nlp_normalization import (
     extract_safety_concept_phrases,
     sanitize_free_text_for_safety_screening,
 )
-from backend.services import provider_service
+from backend.services import patient_member_link_service, provider_service
 from backend.services.navigation_service import CareNavigationService
 from backend.services.patient_service import member_analytical_result_to_dict
 
@@ -97,8 +97,49 @@ def validate_triage_request(data: Any) -> dict[str, Any]:
     return data
 
 
+def _build_member_enrichment(member_res: MemberAnalyticalResult) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    """Return (member_id, patientContext, proactiveRecommendation) for an
+    already-resolved member. Shared by both the PAYER-supplied-patientId
+    path and the PATIENT self-link path below so the two can never drift
+    apart -- a self-linked member is enriched exactly the same way a
+    payer-selected one always has been."""
+    anal_dict = member_analytical_result_to_dict(member_res)
+    xgb_prob = (
+        member_res.xgboost_prediction.high_utilization_probability
+        if member_res.xgboost_prediction
+        else None
+    )
+    anomaly_flag = (
+        bool(member_res.anomaly_result.anomaly_flag)
+        if member_res.anomaly_result
+        else False
+    )
+    patient_context = {
+        "patientId": str(member_res.member.id),
+        "beneficiaryId": member_res.member.bene_id,
+        "riskLevel": anal_dict["riskLevel"],
+        "riskLevelInterpretation": anal_dict["riskLevelInterpretation"],
+        "highUtilizationProbability": xgb_prob,
+        "anomalyFlag": anomaly_flag,
+        "edVisitCount12m": anal_dict["edVisitCount12m"],
+    }
+    nav_service = CareNavigationService()
+    proactive_rec = nav_service.generate_recommendation(
+        member_data={"bene_id": member_res.member.bene_id},
+        utilization_data={"ed_visit_count": anal_dict["edVisitCount12m"]},
+        ml_data={"predicted_probability": xgb_prob},
+        anomaly_data={"anomaly_flag": anomaly_flag},
+    )
+    return member_res.member.id, patient_context, proactive_rec
+
+
 def _execute_triage_request(
-    session: Session, data: dict[str, Any], *, allow_member_linkage: bool, user_id: int | None = None
+    session: Session,
+    data: dict[str, Any],
+    *,
+    allow_member_linkage: bool,
+    user_id: int | None = None,
+    patient_self_link: bool = False,
 ) -> dict[str, Any]:
     chief_complaint = str(data.get("chiefComplaint", "") or "").strip()
     symptoms_duration = str(data.get("symptomsDuration", "") or "").strip()
@@ -126,10 +167,16 @@ def _execute_triage_request(
     proactive_rec: dict[str, Any] | None = None
 
     # Member-linked ML enrichment (patientContext / proactiveRecommendation)
-    # is only ever resolved for an authenticated PAYER caller. There is no
-    # User<->Member mapping, so an unauthenticated or PATIENT caller
-    # supplying a patientId is treated identically to anonymous triage: the
-    # safety-engine screening below is entirely unaffected either way.
+    # comes from exactly one of two sources, never both, and never from a
+    # caller-supplied identifier for a PATIENT:
+    #   1. An authenticated PAYER explicitly supplying patientId (unchanged
+    #      from before -- a PAYER may look up/test as any member).
+    #   2. An authenticated PATIENT's own PatientMemberLink, resolved
+    #      entirely server-side from their session identity. patient_id_raw
+    #      (any patientId/member_id the client sent) is NEVER consulted for
+    #      this branch, so a PATIENT can never choose or probe another
+    #      member's data -- see backend/services/patient_member_link_service.py.
+    # An unauthenticated caller gets neither: identical to anonymous triage.
     if patient_id_raw is not None and allow_member_linkage:
         m_repo = MemberRepository(session)
         run_repo = ModelRunRepository(session)
@@ -145,34 +192,14 @@ def _execute_triage_request(
         )
         if member_res is None:
             raise TriageMemberNotFoundError("Patient not found")
-        member_id = member_res.member.id
-        anal_dict = member_analytical_result_to_dict(member_res)
-        xgb_prob = (
-            member_res.xgboost_prediction.high_utilization_probability
-            if member_res.xgboost_prediction
-            else None
-        )
-        anomaly_flag = (
-            bool(member_res.anomaly_result.anomaly_flag)
-            if member_res.anomaly_result
-            else False
-        )
-        patient_context = {
-            "patientId": str(member_res.member.id),
-            "beneficiaryId": member_res.member.bene_id,
-            "riskLevel": anal_dict["riskLevel"],
-            "riskLevelInterpretation": anal_dict["riskLevelInterpretation"],
-            "highUtilizationProbability": xgb_prob,
-            "anomalyFlag": anomaly_flag,
-            "edVisitCount12m": anal_dict["edVisitCount12m"],
-        }
-        nav_service = CareNavigationService()
-        proactive_rec = nav_service.generate_recommendation(
-            member_data={"bene_id": member_res.member.bene_id},
-            utilization_data={"ed_visit_count": anal_dict["edVisitCount12m"]},
-            ml_data={"predicted_probability": xgb_prob},
-            anomaly_data={"anomaly_flag": anomaly_flag},
-        )
+        member_id, patient_context, proactive_rec = _build_member_enrichment(member_res)
+    elif patient_self_link and user_id is not None:
+        member_res = patient_member_link_service.get_or_create_linked_member(session, user_id)
+        # None only means the synthetic member pool is exhausted/empty --
+        # fall through with no enrichment, exactly like anonymous triage,
+        # never an error that would block this patient's assessment.
+        if member_res is not None:
+            member_id, patient_context, proactive_rec = _build_member_enrichment(member_res)
 
     # Natural-language safety-concept extraction: a small, deterministic,
     # non-ML normalization layer that detects controlled high-confidence
@@ -351,6 +378,7 @@ def process_triage_request(
     *,
     allow_member_linkage: bool = False,
     user_id: int | None = None,
+    patient_self_link: bool = False,
 ) -> dict[str, Any]:
     """Process a symptom triage request via the deterministic safety engine and persist encounter.
 
@@ -360,6 +388,16 @@ def process_triage_request(
     doesn't explicitly authorize it gets the safe, anonymous-equivalent
     behavior. The deterministic safety-engine screening is identical either
     way and is never influenced by this flag.
+
+    ``patient_self_link`` gates a SEPARATE, PATIENT-only enrichment path: it
+    must only be True for an authenticated PATIENT caller, and when True the
+    member is resolved entirely server-side from ``user_id`` via
+    backend/services/patient_member_link_service.py -- never from a
+    caller-supplied patientId/member_id, which this path never even reads.
+    Mutually exclusive in practice with ``allow_member_linkage`` (a caller is
+    either PAYER or PATIENT, never both), but nothing here assumes that; each
+    is checked independently and a caller supplying neither gets the safe,
+    anonymous-equivalent behavior exactly as before.
 
     ``user_id`` is identity/persistence linkage only -- which login identity
     (if any) created this encounter, so it can later be retrieved via
@@ -371,10 +409,12 @@ def process_triage_request(
     validate_triage_request(data)
     if session is not None:
         return _execute_triage_request(
-            session, data, allow_member_linkage=allow_member_linkage, user_id=user_id
+            session, data, allow_member_linkage=allow_member_linkage,
+            user_id=user_id, patient_self_link=patient_self_link,
         )
 
     with session_scope() as sess:
         return _execute_triage_request(
-            sess, data, allow_member_linkage=allow_member_linkage, user_id=user_id
+            sess, data, allow_member_linkage=allow_member_linkage,
+            user_id=user_id, patient_self_link=patient_self_link,
         )

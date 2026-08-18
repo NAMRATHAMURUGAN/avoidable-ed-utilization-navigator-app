@@ -321,10 +321,6 @@ function renderSidebarNav(role) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>
         <span>Payer Intelligence</span>
       </button>
-      <button data-route="history" class="nav-item ${state.activeRoute === 'history' ? 'active' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span>Audit Trail</span>
-      </button>
     `;
   }
 }
@@ -815,6 +811,22 @@ function renderNonEmergencyResult(data, container) {
        </div>`
     : '';
 
+  // Additional, informational care-coordination suggestions derived from
+  // historical utilization/ML data (see CareNavigationService, backend).
+  // Deliberately calm, non-diagnostic language -- this is a coordination
+  // option, never a risk score, priority label, or clinical finding shown
+  // to the patient. Only rendered in the Patient experience; the Payer
+  // experience already sees the equivalent analytical detail elsewhere.
+  const proactiveRecommendationHtml = (data.proactiveRecommendation && state.activeRole === 'PATIENT')
+    ? `<div class="next-step-card">
+        <h3 class="eyebrow">Additional Care Coordination Options</h3>
+        <p>Based on your care history, these additional support options may help:</p>
+        ${(data.proactiveRecommendation.recommendations || []).map(rec => `
+          <p><strong>${escapeHtml(rec.recommendation)}</strong> — ${escapeHtml(rec.reason)}</p>
+        `).join('')}
+       </div>`
+    : '';
+
   const headline = PATHWAY_HEADLINES[data.recommendedAcuity] || 'A care recommendation is available.';
 
   container.innerHTML = `
@@ -847,6 +859,8 @@ function renderNonEmergencyResult(data, container) {
         <h3 class="eyebrow">Next Step</h3>
         ${renderPathwayNextStep(data)}
       </div>
+
+      ${proactiveRecommendationHtml}
 
       ${state.activeRole === 'PATIENT' ? `
         <div class="ai-assistant-cta">
@@ -2193,20 +2207,7 @@ async function openMember(id) {
         <p style="margin: 6px 0;"><strong>Coverage:</strong> ${escapeHtml(patient.medicareType)}</p>
         <p style="margin: 6px 0;"><strong>Conditions:</strong> ${escapeHtml((patient.chronicConditions || []).join(', ') || 'None listed')}</p>
       </div>
-
-      <div style="border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px;">
-        <button id="btn-drawer-history" class="button primary full-width">
-          View Member Audit Log
-        </button>
-      </div>
     `;
-
-    $('#btn-drawer-history')?.addEventListener('click', () => {
-      closeMember();
-      state.selectedMemberId = patient.id;
-      $('#history-patient-select').value = patient.id;
-      route('history');
-    });
   } catch (error) {
     detail.innerHTML = `<div class="notice emergency">Failed to load member profile: ${escapeHtml(error.message)}</div>`;
   }
@@ -2303,13 +2304,31 @@ function closeChat() {
   $('#panel-backdrop')?.classList.remove('open');
 }
 
+function _prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+/** Smoothly scroll a chat's own scrollable message list -- never the page. */
+function _scrollChatToBottom(container) {
+  if (!container) return;
+  container.scrollTo({ top: container.scrollHeight, behavior: _prefersReducedMotion() ? 'auto' : 'smooth' });
+}
+
 function addTypingIndicator(messagesContainer, id) {
   messagesContainer.insertAdjacentHTML('beforeend', `
     <div class="chat-message assistant typing" id="${id}">
-      <p>RightPath AI is thinking&hellip;</p>
+      <div class="typing-indicator" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p class="typing-label">Preparing your care guidance&hellip;</p>
     </div>
   `);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  _scrollChatToBottom(messagesContainer);
+}
+
+/** Long-wait state: swap the loader's label without touching the dots, so a
+ * slow Gemini response never looks like a frozen/broken interface. */
+function _updateTypingLabel(id, text) {
+  const label = document.getElementById(id)?.querySelector('.typing-label');
+  if (label) label.textContent = text;
 }
 
 function removeTypingIndicator(id) {
@@ -2414,13 +2433,19 @@ function formatAssistantReply(text) {
     .join('');
 }
 
-async function submitChat(event) {
-  event.preventDefault();
+/**
+ * Core send path, shared by the form submit handler and the "Try again"
+ * retry action below, so both follow the exact same request/render logic.
+ * Renders the patient's message immediately (never waits on the network),
+ * shows a compact loading bubble while Gemini/the deterministic router
+ * responds, and disables the input/button for the duration to prevent
+ * duplicate in-flight requests.
+ */
+async function sendChatMessage(messageText) {
   const input = $('#chat-input');
   const submitBtn = $('#chat-form button[type="submit"]');
   const messagesContainer = $('#chat-messages');
-  const messageText = input.value.trim();
-  if (!messageText || input.disabled) return; // guard against duplicate submissions
+  if (!messageText || input?.disabled) return; // guard against duplicate/overlapping sends
 
   if (!state.currentEncounter?.encounterId) {
     messagesContainer.insertAdjacentHTML('beforeend', `
@@ -2428,7 +2453,7 @@ async function submitChat(event) {
         <p>Please complete a symptom assessment first so RightPath AI has context for your question.</p>
       </div>
     `);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    _scrollChatToBottom(messagesContainer);
     return;
   }
 
@@ -2437,13 +2462,23 @@ async function submitChat(event) {
       <p>${escapeHtml(messageText)}</p>
     </div>
   `);
-  input.value = '';
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  _scrollChatToBottom(messagesContainer);
 
-  input.disabled = true;
-  if (submitBtn) submitBtn.disabled = true;
+  if (input) input.disabled = true;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Thinking…';
+  }
+
   const typingId = `chat-typing-${Date.now()}`;
   addTypingIndicator(messagesContainer, typingId);
+  // If a response hasn't arrived after a few seconds, reassure the patient
+  // the interface is still working rather than leaving a static loader --
+  // never naming the underlying AI provider/implementation.
+  const longWaitTimer = setTimeout(
+    () => _updateTypingLabel(typingId, 'Still preparing your guidance…'),
+    4000,
+  );
 
   try {
     const response = await request('/api/patient/assistant', {
@@ -2461,29 +2496,52 @@ async function submitChat(event) {
       }),
     });
 
+    clearTimeout(longWaitTimer);
     removeTypingIndicator(typingId);
     const replyText = response.emergency
-      ? 'RightPath AI is not available for an emergency result. Please follow the emergency guidance above -- call 911 or go to the nearest Emergency Department.'
+      ? "RightPath AI can't help with emergency symptoms. Call 911 or go to the nearest Emergency Department right away."
       : (response.reply || 'Assistant response received.');
     messagesContainer.insertAdjacentHTML('beforeend', `
-      <div class="chat-message assistant">
-        <p>${escapeHtml(replyText)}</p>
-      </div>
+      <div class="chat-message assistant">${formatAssistantReply(replyText)}</div>
     `);
   } catch (error) {
-    // Never surface a raw backend exception -- a clean, safe fallback that
-    // still points the patient back to the recommendation they already have.
+    // Never surface a raw backend exception, and never invent a replacement
+    // medical recommendation -- point back to the recommendation already on
+    // screen and offer to retry the exact same question.
+    clearTimeout(longWaitTimer);
     removeTypingIndicator(typingId);
     messagesContainer.insertAdjacentHTML('beforeend', `
-      <div class="chat-message assistant">
-        <p>RightPath AI is temporarily unavailable. Please continue with the recommended care pathway.</p>
+      <div class="chat-message error">
+        <p>Sorry, I couldn't reach the assistant right now.</p>
+        <p>Your existing RightPath care recommendation is still available above.</p>
+        <button type="button" class="text-button chat-retry-btn" data-retry-chat
+          data-retry-question="${escapeHtml(messageText)}">Try again</button>
       </div>
     `);
   } finally {
-    input.disabled = false;
-    if (submitBtn) submitBtn.disabled = false;
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    if (input) input.disabled = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send';
+    }
+    _scrollChatToBottom(messagesContainer);
   }
+}
+
+async function submitChat(event) {
+  event.preventDefault();
+  const input = $('#chat-input');
+  const messageText = input.value.trim();
+  if (!messageText || input.disabled) return; // guard against duplicate submissions
+  input.value = '';
+  await sendChatMessage(messageText);
+}
+
+/** "Try again" action on a failed request -- resends the exact same question. */
+async function retryChatMessage(messageText) {
+  const input = $('#chat-input');
+  if (input?.disabled) return; // a request is already in flight
+  await sendChatMessage(messageText);
 }
 
 /**
@@ -2633,6 +2691,14 @@ function bindEvents() {
 
     if (event.target.closest('[data-close-chat]')) {
       closeChat();
+    }
+
+    const retryChatBtn = event.target.closest('[data-retry-chat]');
+    if (retryChatBtn) {
+      event.preventDefault();
+      const question = retryChatBtn.dataset.retryQuestion || '';
+      retryChatBtn.closest('.chat-message')?.remove();
+      retryChatMessage(question);
     }
   });
 

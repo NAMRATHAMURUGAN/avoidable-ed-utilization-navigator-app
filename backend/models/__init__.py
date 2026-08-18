@@ -4,6 +4,7 @@ from backend.models.anomaly import UtilizationAnomalyResult
 from backend.models.encounter import NavigationAction, TriageEncounter
 from backend.models.member import Member
 from backend.models.model_run import ModelRun
+from backend.models.patient_member_link import PatientMemberLink
 from backend.models.patient_profile import PatientProfile
 from backend.models.prediction import XGBoostUtilizationPrediction
 from backend.models.provider import Provider
@@ -21,4 +22,5 @@ __all__ = [
     "Provider",
     "User",
     "PatientProfile",
+    "PatientMemberLink",
 ]

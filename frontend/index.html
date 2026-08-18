@@ -652,7 +652,8 @@
       </div>
     </aside>
 
-    <!-- CARE COPILOT CHAT DRAWER (currently unreachable in the UI; the backing /api/chat-copilot endpoint is not implemented on Flask yet) -->
+    <!-- CARE COPILOT CHAT DRAWER -- opens from the "Ask RightPath AI" CTA on a
+         non-emergency triage result; wired to POST /api/patient/assistant. -->
     <aside id="chat-panel" class="chat-panel" aria-hidden="true">
       <div class="panel-header">
         <div>

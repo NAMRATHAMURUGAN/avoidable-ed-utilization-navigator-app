@@ -2,13 +2,18 @@
 member-linked-data boundaries on POST /api/triage and POST
 /api/navigation/action.
 
-There is no User<->Member mapping in this application: an authenticated
-PATIENT does not correspond to any specific CMS Member record. These tests
-therefore verify that an unauthenticated or PATIENT caller is denied
-member-linked data/writes outright (401/403, or a triage/navigation call
-that succeeds but omits member-linked enrichment) -- they do not, and must
-not, test any notion of "the patient's own record," since no such concept
-exists in the current data model.
+An authenticated PATIENT now DOES correspond to exactly one CMS Member
+record, via PatientMemberLink (backend/models/patient_member_link.py) --
+resolved entirely server-side from the caller's own session identity, never
+from a client-supplied patientId/member_id. See
+backend/tests/test_patient_member_link.py for the dedicated tests covering
+that self-link mechanism (first-time creation, idempotency, and that a
+PATIENT cannot choose a different member by supplying one). The tests here
+verify the surrounding boundary is otherwise unchanged: an unauthenticated
+caller still gets no member-linked data/writes at all (401/403, or a
+triage/navigation call that succeeds but omits member-linked enrichment),
+and a caller-supplied patientId/member_id still only ever works for an
+authenticated PAYER.
 """
 
 from __future__ import annotations
@@ -89,7 +94,13 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
         """One HIGH-risk member (id=1), used both for the PAYER-only matrix
         and to prove member-linked risk data never leaks -- directly (via
         patientContext) or indirectly (via the PRIMARY_CARE acuity nudge) --
-        to an unauthenticated or PATIENT caller."""
+        to an unauthenticated caller, or to any caller via a client-supplied
+        patientId they are not authorized to use. A PATIENT caller in these
+        tests still receives THEIR OWN self-linked enrichment (this is the
+        one member in the pool, so any authenticated PATIENT here gets
+        linked to it automatically) -- what these tests prove is that the
+        supplied "patientId": "1" is never what causes that, since the same
+        result occurs whether or not it's present in the request."""
         xgb_run = ModelRun(
             model_run_id=1,
             model_type="xgboost",
@@ -264,7 +275,10 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
             self.assertFalse(data["isEmergencyRedFlag"])
             self.assertIsNone(data.get("patientContext"))
 
-    def test_triage_patient_role_without_patient_id_succeeds(self) -> None:
+    def test_triage_patient_role_without_patient_id_receives_own_self_linked_member(self) -> None:
+        """An authenticated PATIENT gets member-linked enrichment automatically
+        on their first triage call -- no patientId needed at all -- via their
+        own PatientMemberLink, resolved server-side from session identity."""
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope), \
              patch("backend.services.triage_service.session_scope", self._mock_session_scope):
             self._register_and_login("patient-triage@example.com", "PATIENT")
@@ -274,7 +288,14 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
             self.assertFalse(data["isEmergencyRedFlag"])
-            self.assertIsNone(data.get("patientContext"))
+            self.assertIsNotNone(data.get("patientContext"))
+            self.assertEqual(data["patientContext"]["beneficiaryId"], "CMS-AUTHZ-001")
+            self.assertEqual(data["patientContext"]["riskLevel"], "HIGH")
+            self.assertIsNotNone(data.get("proactiveRecommendation"))
+            # Non-emergency utilization signal IS allowed to influence
+            # non-emergency acuity: HIGH-risk nudges TELEHEALTH-eligible
+            # symptoms up to PRIMARY_CARE coordination.
+            self.assertEqual(data["recommendedAcuity"], "PRIMARY_CARE")
 
     def test_triage_unauthenticated_with_patient_id_omits_member_linked_data(self) -> None:
         with patch("backend.services.triage_service.session_scope", self._mock_session_scope):
@@ -291,7 +312,10 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
             # generic (non-risk-adjusted) default for this chief complaint.
             self.assertNotEqual(data["recommendedAcuity"], "PRIMARY_CARE")
 
-    def test_triage_patient_role_with_patient_id_omits_member_linked_data(self) -> None:
+    def test_triage_patient_role_with_patient_id_uses_self_link_not_the_supplied_id(self) -> None:
+        """A PATIENT-supplied patientId is never consulted for the PATIENT
+        self-link path -- the response is identical whether or not it's
+        present (see the sibling test above with no patientId at all)."""
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope), \
              patch("backend.services.triage_service.session_scope", self._mock_session_scope):
             self._register_and_login("patient-linked@example.com", "PATIENT")
@@ -301,9 +325,10 @@ class AuthorizationMatrixTestCase(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200)
             data = response.get_json()
-            self.assertIsNone(data.get("patientContext"))
-            self.assertIsNone(data.get("proactiveRecommendation"))
-            self.assertNotEqual(data["recommendedAcuity"], "PRIMARY_CARE")
+            self.assertIsNotNone(data.get("patientContext"))
+            self.assertEqual(data["patientContext"]["beneficiaryId"], "CMS-AUTHZ-001")
+            self.assertIsNotNone(data.get("proactiveRecommendation"))
+            self.assertEqual(data["recommendedAcuity"], "PRIMARY_CARE")
 
     def test_triage_payer_role_with_patient_id_returns_member_linked_data(self) -> None:
         with patch("backend.services.auth_service.session_scope", self._mock_session_scope), \

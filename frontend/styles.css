@@ -449,6 +449,10 @@ body {
 .button.full-width {
   width: 100%;
 }
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .text-button {
   background: transparent;
   border: 0;
@@ -1423,9 +1427,60 @@ textarea.input-control {
   border-top: 1px solid var(--line);
   margin-top: 16px;
 }
-.chat-message.typing p {
+.chat-form .input-control {
+  min-width: 0;
+}
+
+/* Compact assistant loading state -- a small, solid-color pulse, not a
+   glowing/"AI generated" effect, so a multi-second Gemini reply still reads
+   as an active, trustworthy product rather than a stalled interface. */
+.chat-message.typing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  opacity: 0.35;
+  animation: rp-typing-pulse 1.1s ease-in-out infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes rp-typing-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-indicator span { animation: none; opacity: 0.6; }
+}
+.typing-label {
+  margin: 0;
   color: var(--muted);
+  font-size: 13px;
   font-style: italic;
+}
+
+/* Assistant-unavailable state: amber (existing non-emergency "notice" tone,
+   see .notice.emergency above for the reserved coral/emergency semantics)
+   so a connection failure never reads as an emergency warning. */
+.chat-message.error {
+  background: var(--amber-bg);
+  color: var(--deep);
+  margin-right: auto;
+  border-bottom-left-radius: 2px;
+  border: 1px solid #f0d59a;
+}
+.chat-retry-btn {
+  margin-top: 2px;
 }
 
 /* Payer Intelligence Assistant (page-embedded, not a drawer) */
@@ -1655,5 +1710,12 @@ textarea.input-control {
   }
   .page-header h1 {
     font-size: 22px;
+  }
+  .side-panel, .chat-panel {
+    width: 100vw;
+    padding: 20px 16px;
+  }
+  .chat-message {
+    max-width: 92%;
   }
 }
