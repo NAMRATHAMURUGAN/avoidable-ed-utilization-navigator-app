@@ -6,21 +6,44 @@
   --teal-hover: #06625c;
   --ink: #153345;
   --muted: #5a6e7f;
+  --muted-2: #8598a6;
   --paper: #f4f7f9;
   --card: #ffffff;
   --line: #dce6eb;
+  --line-strong: #c2d3db;
   --coral: #d65b4f;
   --coral-bg: #ffe8e4;
+  --coral-ink: #7a2e28;
   --amber: #bd7a11;
   --amber-bg: #fff1d5;
+  --amber-ink: #6b4a0d;
   --green: #0b6b62;
   --green-bg: #e1f4f0;
+  /* Secondary accent, reserved for payer analytics data-viz (e.g. distinguishing
+     "opportunity"/"navigation" series from the primary teal "utilization/risk"
+     series) -- never used for safety/emergency states, which stay coral/amber. */
+  --accent: #4756a6;
+  --accent-bg: #eaecf9;
+  --surface-hover: #f4f8f9;
   --shadow-sm: 0 2px 6px rgba(18, 48, 71, 0.04);
   --shadow: 0 6px 18px rgba(18, 48, 71, 0.06);
   --shadow-lg: 0 14px 35px rgba(18, 48, 71, 0.12);
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 14px;
+  --focus-ring: 0 0 0 3px rgba(8, 124, 117, 0.22);
+  --focus-ring-emergency: 0 0 0 3px rgba(214, 91, 79, 0.28);
+  /* Spacing scale (4px base) -- used by new/refined rules; existing hand-set
+     values elsewhere are left as-is rather than mass-converted. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --control-height: 42px;
+  --control-height-touch: 46px;
 }
 
 *, *::before, *::after {
@@ -33,6 +56,10 @@ html, body {
   padding: 0;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background: var(--paper);
   color: var(--ink);
@@ -40,6 +67,37 @@ body {
   font-size: 14.5px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Prevent any single element from forcing horizontal scroll on the page --
+   a safety net alongside the layout-level responsive rules below, never a
+   substitute for them. */
+img, svg, canvas, video {
+  max-width: 100%;
+}
+
+/* Visible keyboard-focus state for every interactive element, so focus is
+   never communicated by browser-default outlines alone (which are
+   inconsistent across browsers) nor by colour alone. Mouse/touch clicks
+   don't trigger :focus-visible, so this never adds a ring to a plain click. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 .sr-only {
@@ -344,6 +402,108 @@ body {
   line-height: 1.45;
 }
 
+/* Portal selection + auth screens (unauthenticated entry points) */
+.portal-select-shell {
+  max-width: 900px;
+  margin: 64px auto;
+  padding: 0 20px;
+}
+.portal-select-intro {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.portal-select-mark {
+  display: inline-flex;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-lg);
+}
+.portal-select-mark svg {
+  width: 32px;
+  height: 32px;
+}
+.portal-select-heading {
+  margin: 0 0 2px 0;
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--deep);
+  letter-spacing: -0.02em;
+}
+.portal-select-tagline {
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--teal);
+}
+.portal-select-subtitle {
+  margin: 0 auto 14px auto;
+  max-width: 520px;
+}
+.portal-select-eyebrow {
+  margin: 0;
+}
+.portal-select-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.portal-select-grid > * {
+  min-width: 0;
+}
+/* These CTA buttons carry full-sentence labels ("Continue as Healthcare
+   Manager / Payer Admin"); unlike short button labels elsewhere, nowrap here
+   forces the card wider than its column at narrow viewports. */
+.portal-select-card .button {
+  white-space: normal;
+}
+.portal-select-card {
+  position: relative;
+  padding-top: 32px;
+  border-top: 3px solid var(--line);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.portal-select-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+.portal-select-card--patient {
+  border-top-color: var(--teal);
+}
+.portal-select-card--payer {
+  border-top-color: var(--deep);
+}
+.portal-select-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+.portal-select-card-icon svg {
+  width: 24px;
+  height: 24px;
+}
+.portal-select-card--patient .portal-select-card-icon {
+  background: var(--teal-light);
+  color: var(--teal);
+}
+.portal-select-card--payer .portal-select-card-icon {
+  background: var(--accent-bg);
+  color: var(--deep);
+}
+.auth-card {
+  max-width: 420px;
+  margin: 64px auto;
+}
+.auth-back-row {
+  margin: 0 0 16px 0;
+}
+
 /* Patient landing hero */
 .hero-header {
   padding: 8px 0 4px 0;
@@ -362,6 +522,53 @@ body {
   gap: 12px;
   margin-top: 20px;
   flex-wrap: wrap;
+}
+
+/* Portal identity banner -- role-aware masthead at the top of every
+   authenticated page, so "Patient Portal" / "Payer Portal" is a prominent
+   part of the main content header rather than a small topbar label. */
+.portal-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  margin-bottom: 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--teal-light);
+}
+.portal-banner[data-role="PAYER_ADMIN"] {
+  background: var(--accent-bg);
+}
+.portal-banner-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius);
+  background: var(--teal);
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.portal-banner[data-role="PAYER_ADMIN"] .portal-banner-icon {
+  background: var(--deep);
+}
+.portal-banner-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.portal-banner-kicker {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--deep);
+  letter-spacing: -0.01em;
+}
+.portal-banner-tagline {
+  margin: 1px 0 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 /* 5. CARDS & GENERAL LAYOUTS */
@@ -391,6 +598,12 @@ body {
   gap: 28px;
   align-items: start;
 }
+/* Grid items default to min-width:auto, so an unbreakable descendant (e.g. a
+   nowrap button row) can force the track -- and the whole page -- wider than
+   the viewport. min-width:0 lets track sizing win instead. */
+.two-column > *, .triage-grid > *, .dashboard-grid > * {
+  min-width: 0;
+}
 
 /* 6. BUTTONS & FORM CONTROLS */
 .button {
@@ -398,14 +611,18 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  min-height: var(--control-height);
   padding: 10px 20px;
   font-size: 14px;
   font-weight: 600;
   border-radius: var(--radius);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
   white-space: nowrap;
+}
+.button:active {
+  transform: translateY(1px);
 }
 .button.primary {
   background: var(--teal);
@@ -419,10 +636,11 @@ body {
 .button.secondary {
   background: #ffffff;
   color: var(--deep);
-  border-color: var(--line);
+  border-color: var(--line-strong);
 }
 .button.secondary:hover {
-  background: #f4f8f9;
+  background: var(--surface-hover);
+  border-color: var(--muted-2);
 }
 .button.ghost {
   background: var(--teal-light);
@@ -442,7 +660,12 @@ body {
 .button.emergency-btn:hover {
   background: #be4a3e;
 }
+.button.emergency-btn:focus-visible {
+  outline: 2px solid var(--coral-ink);
+  outline-offset: 2px;
+}
 .button.large {
+  min-height: 48px;
   padding: 12px 26px;
   font-size: 15px;
 }
@@ -450,8 +673,9 @@ body {
   width: 100%;
 }
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
 }
 .text-button {
   background: transparent;
@@ -460,24 +684,31 @@ body {
   font-weight: 700;
   font-size: 13.5px;
   cursor: pointer;
-  padding: 0;
+  padding: 2px 0;
 }
 .text-button:hover {
+  color: var(--teal-hover);
   text-decoration: underline;
+}
+.text-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 .icon-button {
   background: transparent;
   border: 0;
   color: var(--muted);
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-sm);
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 .icon-button:hover {
-  background: #f0f4f7;
+  background: var(--surface-hover);
   color: var(--deep);
 }
 
@@ -499,6 +730,7 @@ body {
 
 .input-control {
   width: 100%;
+  min-height: var(--control-height);
   padding: 10px 14px;
   border: 1px solid #cbd9e0;
   border-radius: var(--radius);
@@ -511,11 +743,22 @@ body {
 .input-control:focus {
   outline: 0;
   border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(8, 124, 117, 0.15);
+  box-shadow: var(--focus-ring);
+}
+.input-control:disabled {
+  background: var(--paper);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.input-control::placeholder {
+  color: var(--muted-2);
 }
 textarea.input-control {
-  resize: vertical;
   min-height: 90px;
+  resize: vertical;
+}
+select.input-control {
+  cursor: pointer;
 }
 
 /* 7. TRIAGE & INTAKE STYLES */
@@ -561,21 +804,28 @@ textarea.input-control {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: #ffffff;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .checkbox-card:hover {
-  background: #f4f8f9;
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+.checkbox-card:has(input:checked) {
+  background: var(--coral-bg);
+  border-color: #f0b6ac;
 }
 .checkbox-card input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--teal);
+  width: 18px;
+  height: 18px;
+  accent-color: var(--coral);
   cursor: pointer;
+  flex-shrink: 0;
 }
 .checkbox-label {
   font-size: 13px;
@@ -689,6 +939,7 @@ textarea.input-control {
 }
 .emergency-actions-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 14px;
   margin-bottom: 24px;
@@ -704,7 +955,10 @@ textarea.input-control {
   line-height: 1.45;
 }
 
-/* NON-EMERGENCY RECOMMENDATION CARD */
+/* NON-EMERGENCY RECOMMENDATION CARD -- the single most important moment in
+   the patient flow ("what did RightPath recommend?"), so it carries the
+   strongest visual weight on the page without borrowing emergency/coral
+   colour semantics. */
 .recommendation-card {
   display: flex;
   flex-direction: column;
@@ -714,27 +968,32 @@ textarea.input-control {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 .acuity-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: 99px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .acuity-badge.telehealth { background: #e1f4f0; color: #087c75; }
 .acuity-badge.primary_care { background: #e0f2fe; color: #0369a1; }
 .acuity-badge.urgent_care { background: #fef3c7; color: #b45309; }
 
 .rec-title-wrap h2 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--deep);
   margin: 4px 0 2px 0;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .rationale-box {
@@ -882,23 +1141,31 @@ textarea.input-control {
   border-radius: var(--radius);
   padding: 22px;
   box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.stat-card:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--line-strong);
 }
 .stat-label {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--muted);
-  font-weight: 600;
-  margin: 0 0 4px 0;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 6px 0;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 800;
   color: var(--deep);
   letter-spacing: -0.03em;
   margin: 0 0 4px 0;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .stat-detail {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 
@@ -1089,6 +1356,42 @@ textarea.input-control {
   gap: 8px;
 }
 
+/* Primary Care Connection Workflow card (cohort view) */
+.workflow-card {
+  margin-bottom: 24px;
+  background: var(--teal-light);
+  border-color: #bce3df;
+}
+.workflow-card-title {
+  margin: 0 0 6px 0;
+  color: var(--teal);
+  font-size: 16px;
+  font-weight: 800;
+}
+.workflow-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.workflow-step {
+  background: #ffffff;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+.workflow-step strong {
+  display: block;
+  color: var(--deep);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+.workflow-step p {
+  margin: 3px 0 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 /* 9. MEMBER COHORT TABLE */
 .filter-card {
   padding: 18px 24px;
@@ -1096,7 +1399,8 @@ textarea.input-control {
 }
 .filter-row {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 16px 20px;
   align-items: flex-end;
 }
 .filter-group {
@@ -1134,9 +1438,11 @@ textarea.input-control {
 .table-responsive {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .data-table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -1149,14 +1455,18 @@ textarea.input-control {
   letter-spacing: 0.06em;
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
 .data-table td {
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
   font-size: 14px;
 }
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
 .data-table tr:hover td {
-  background: #f9fbfb;
+  background: var(--surface-hover);
 }
 
 /* 10. CARE OPTIONS DIRECTORY STYLES */
@@ -1588,29 +1898,38 @@ textarea.input-control {
 .urgent-care-map-panel { overflow: hidden; }
 #urgent-care-leaflet-map { height: 480px; width: 100%; background: #e7f0f3; }
 .map-attribution-note { margin: 8px 12px; color: var(--muted); font-size: 12px; }
-.urgent-care-list-panel { padding: 18px; max-height: 520px; overflow: auto; }
-.urgent-care-list-panel h2 { font-size: 18px; margin: 0 0 12px; }
+.urgent-care-list-panel { padding: 18px; max-height: 520px; overflow: auto; -webkit-overflow-scrolling: touch; }
+.urgent-care-list-panel h2 { font-size: 17px; font-weight: 800; color: var(--deep); margin: 0 0 12px; }
 .urgent-care-facility-card {
   width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--paper, #fff);
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper, #fff);
   padding: 14px; margin: 0 0 10px; color: var(--ink); cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
-.urgent-care-facility-card:hover,
-.urgent-care-facility-card:focus-visible { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(22, 127, 138, .14); outline: none; }
-.urgent-care-facility-card.selected { border-color: #b45309; background: #fffaf0; }
-.facility-card-title { font-weight: 700; color: var(--navy); }
+.urgent-care-facility-card:hover { background: #ffffff; border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+.urgent-care-facility-card:focus-visible { border-color: var(--teal); box-shadow: var(--focus-ring); outline: none; }
+.urgent-care-facility-card.selected { border-color: var(--amber); background: var(--amber-bg); }
+.facility-card-title { font-weight: 700; color: var(--deep); }
 .facility-availability { color: var(--muted); font-size: 13px; }
 .selected-urgent-care { padding: 20px; max-width: 680px; }
-.selected-urgent-care h2 { margin: 4px 0; }
+.selected-urgent-care h2 { margin: 4px 0; font-size: 18px; font-weight: 800; color: var(--deep); }
 .urgent-care-message { max-width: 680px; padding: 24px; }
 .empty-state.compact { padding: 22px 8px; }
 
-/* 15. RESPONSIVE BREAKPOINTS */
+/* 15. RESPONSIVE BREAKPOINTS
+   Four tiers, cascading from large desktop down:
+     >= 1200px  large desktop (default styles above)
+     992-1199px desktop/tablet
+     768-991px  tablet
+     < 768px    mobile (with an additional < 480px small-mobile refinement)
+   Each tier only overrides what genuinely needs to change at that width --
+   later (narrower) tiers inherit everything from earlier ones. */
 .mobile-only {
   display: none;
 }
 
-@media (max-width: 1099px) {
+/* ---- Desktop/tablet: 992-1199px ---- */
+@media (max-width: 1199px) {
   .app-layout {
     grid-template-columns: 200px minmax(0, 1fr);
   }
@@ -1625,14 +1944,57 @@ textarea.input-control {
   .stat-grid-container {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .workflow-steps-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-@media (max-width: 768px) {
+/* ---- Tablet: 768-991px ----
+   The persistent sidebar stays (narrowed, from the tier above) -- only
+   content columns reflow here, since a 2-column layout inside ~600-700px of
+   remaining content width reads as cramped rather than organized. */
+@media (max-width: 991px) {
+  .two-column, .triage-grid, .dashboard-grid, .profile-grid {
+    grid-template-columns: 1fr;
+  }
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+  .main-content {
+    padding: 22px 20px;
+  }
+  .provider-option-item {
+    flex-wrap: wrap;
+  }
+  .provider-header {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Mobile: < 768px ----
+   Sidebar becomes a compact overlay menu; every remaining multi-column
+   layout collapses to a single column; controls and cards go full-width. */
+@media (max-width: 767px) {
   .topbar {
     padding: 0 16px;
+    gap: 8px;
   }
   .mobile-only {
     display: inline-flex;
+  }
+  .workspace-divider, .workspace-title {
+    display: none;
+  }
+  /* The account email is supplementary (logout doesn't need it, and the
+     workspace title above already identifies the portal) -- hidden rather
+     than truncated, since truncating still left the topbar's two flex
+     groups wider than the viewport (measured directly: 55px overflow at
+     390px). Hiding it removes enough width with margin to spare. */
+  #current-user-email {
+    display: none;
+  }
+  .topbar-left, .topbar-right {
+    min-width: 0;
   }
 
   .app-layout {
@@ -1644,7 +2006,7 @@ textarea.input-control {
     left: 0;
     bottom: 0;
     z-index: 48;
-    width: 240px;
+    width: min(280px, 84vw);
     transform: translateX(-100%);
     transition: transform 0.2s ease;
     box-shadow: var(--shadow-lg);
@@ -1654,11 +2016,35 @@ textarea.input-control {
   }
 
   .main-content {
-    padding: 20px 16px 40px;
+    padding: 18px 16px 40px;
   }
 
-  .two-column, .triage-grid, .dashboard-grid, .profile-grid {
-    grid-template-columns: 1fr;
+  .card {
+    padding: 20px;
+  }
+  .intake-card, .history-card {
+    padding: 20px;
+  }
+  .filter-card {
+    padding: 16px 18px;
+  }
+
+  .hero-header h1 {
+    font-size: 26px;
+  }
+  .hero-header .subtitle {
+    font-size: 14.5px;
+  }
+
+  .portal-banner {
+    padding: 12px 16px;
+    margin-bottom: 18px;
+  }
+  .portal-banner-kicker {
+    font-size: 14px;
+  }
+  .portal-banner-tagline {
+    font-size: 12px;
   }
 
   .chart-grid, .priority-matrix-grid {
@@ -1694,13 +2080,47 @@ textarea.input-control {
     flex-direction: column;
     align-items: stretch;
   }
+  .filter-group {
+    min-width: 0;
+  }
 
   .slot-buttons-grid {
     grid-template-columns: 1fr;
   }
+
+  .workflow-steps-grid {
+    grid-template-columns: 1fr;
+  }
+  .portal-select-grid {
+    grid-template-columns: 1fr;
+  }
+  .portal-select-shell {
+    margin: 40px auto;
+  }
+  .auth-card {
+    margin: 32px auto;
+  }
+
+  .emergency-result-card {
+    padding: 24px 18px;
+  }
+  .emergency-actions-row {
+    flex-direction: column;
+  }
+  .emergency-actions-row .button {
+    width: 100%;
+  }
+
+  #urgent-care-leaflet-map { height: 320px; }
+  .urgent-care-list-panel { max-height: 360px; }
+
+  .side-panel, .chat-panel {
+    width: min(420px, 100vw);
+  }
 }
 
-@media (max-width: 520px) {
+/* ---- Small mobile: < 480px ---- */
+@media (max-width: 479px) {
   .stat-grid-container {
     grid-template-columns: 1fr;
   }
@@ -1711,11 +2131,36 @@ textarea.input-control {
   .page-header h1 {
     font-size: 22px;
   }
+  .hero-header h1 {
+    font-size: 23px;
+  }
+  .portal-banner {
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .portal-banner-icon {
+    width: 32px;
+    height: 32px;
+  }
+  .portal-banner-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+  .portal-select-heading {
+    font-size: 30px;
+  }
   .side-panel, .chat-panel {
     width: 100vw;
-    padding: 20px 16px;
+    padding: 18px 14px;
   }
   .chat-message {
     max-width: 92%;
+  }
+  #urgent-care-leaflet-map { height: 260px; }
+  .emergency-title {
+    font-size: 20px;
+  }
+  .rec-title-wrap h2 {
+    font-size: 20px;
   }
 }

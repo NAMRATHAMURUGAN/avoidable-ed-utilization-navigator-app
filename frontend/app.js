@@ -333,9 +333,17 @@ async function setRole(role) {
   state.activeRole = role;
 
   const workspaceTitle = $('#workspace-title');
+  const portalBanner = $('#portal-banner');
+  const portalBannerIcon = $('#portal-banner-icon');
+  const portalBannerKicker = $('#portal-banner-kicker');
+  const portalBannerTagline = $('#portal-banner-tagline');
 
   if (role === 'PATIENT') {
     if (workspaceTitle) workspaceTitle.textContent = 'Patient Portal';
+    if (portalBanner) portalBanner.dataset.role = 'PATIENT';
+    if (portalBannerKicker) portalBannerKicker.textContent = 'Patient Portal';
+    if (portalBannerTagline) portalBannerTagline.textContent = 'Personalized Care Navigation';
+    if (portalBannerIcon) portalBannerIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>';
 
     if ($('#history-title')) $('#history-title').textContent = 'My Care History';
     if ($('#history-subtitle')) $('#history-subtitle').textContent = 'Review your symptom assessments and recorded care navigation choices.';
@@ -344,6 +352,10 @@ async function setRole(role) {
     $$('.payer-only').forEach(el => el.classList.add('role-hidden'));
   } else if (role === 'PAYER_ADMIN') {
     if (workspaceTitle) workspaceTitle.textContent = 'Payer Analytics Workspace';
+    if (portalBanner) portalBanner.dataset.role = 'PAYER_ADMIN';
+    if (portalBannerKicker) portalBannerKicker.textContent = 'Payer Portal';
+    if (portalBannerTagline) portalBannerTagline.textContent = 'Population & Utilization Intelligence';
+    if (portalBannerIcon) portalBannerIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>';
 
     if ($('#history-title')) $('#history-title').textContent = 'Population Audit Trail';
     if ($('#history-subtitle')) $('#history-subtitle').textContent = 'Database audit trail of care navigation decisions across members.';
@@ -2000,9 +2012,6 @@ async function renderInterventions() {
 /**
  * VIEW 9: COST REDUCTION & PROGRAM OUTCOMES (Payer Intelligence)
  * Reuses the already-loaded GET /api/analytics -- no new backend endpoint.
- * Fields the backend has not computed yet (avoidable-ED %, potential
- * savings, NYU category breakdown) render as an honest pending state,
- * never an estimate.
  */
 function renderCostReduction() {
   const container = $('#cost-reduction-content');
@@ -2012,14 +2021,6 @@ function renderCostReduction() {
     container.innerHTML = '<div class="card"><div class="empty-state"><h3>Analytics unavailable</h3><p>Population analytics could not be loaded.</p></div></div>';
     return;
   }
-
-  const pendingMetric = (label, detail) => `
-    <div class="stat-card">
-      <div class="stat-label">${label}</div>
-      <div class="stat-value muted" style="font-size: 16px;">Not yet available</div>
-      <div class="stat-detail">${detail}</div>
-    </div>
-  `;
 
   container.innerHTML = `
     <div class="stat-grid-container">
@@ -2065,19 +2066,6 @@ function renderCostReduction() {
         </div>
         <div class="chart-canvas-wrap"><canvas id="chart-utilization-vs-cost"></canvas></div>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <p class="eyebrow">Program Outcomes</p>
-        <h2>Avoidability &amp; Savings</h2>
-      </div>
-      <div class="stat-grid-container">
-        ${pendingMetric('Avoidable ED Percentage', 'Requires the ED-avoidability analytics layer')}
-        ${pendingMetric('Potential Savings', 'Requires the ED-avoidability analytics layer')}
-        ${pendingMetric('NYU Category Breakdown', 'Requires claims-level diagnosis classification')}
-      </div>
-      <p class="muted caption-note">These metrics require an analytics layer that has not been built yet. Once available, this page will calculate avoidable-ED visit rates and associated savings from real ingested claims data -- no figures are estimated or fabricated here.</p>
     </div>
   `;
 

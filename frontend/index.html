@@ -15,25 +15,32 @@
          GET/POST /api/auth/*) is the sole source of truth for which
          workspace is entered (see enterAuthenticatedWorkspace in app.js). -->
     <div id="portal-select-screen">
-      <div style="max-width: 900px; margin: 64px auto; padding: 0 20px;">
-        <div style="text-align: center; margin-bottom: 40px;">
-          <span class="brand-mark" style="display: inline-flex; margin-bottom: 14px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      <div class="portal-select-shell">
+        <div class="portal-select-intro">
+          <span class="brand-mark portal-select-mark">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 11l18.5-9-9 18.5-2.2-7.3L3 11z"/></svg>
           </span>
-          <h1 style="margin: 0 0 6px 0; font-size: 34px;">RightPath</h1>
-          <p class="subtitle" style="margin: 0 auto 14px auto; max-width: 520px;">Avoidable Emergency Department Utilization Navigator</p>
-          <p class="eyebrow" style="margin: 0;">Choose your portal</p>
+          <h1 class="portal-select-heading">Right<strong>Path</strong></h1>
+          <p class="portal-select-tagline">Healthcare Navigation</p>
+          <p class="subtitle portal-select-subtitle">Avoidable Emergency Department Utilization Navigator</p>
+          <p class="eyebrow portal-select-eyebrow">Choose your portal</p>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-          <div class="card">
+        <div class="portal-select-grid">
+          <div class="card portal-select-card portal-select-card--patient">
+            <span class="portal-select-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
             <div class="card-header">
               <h2>Patient / Member</h2>
               <p class="muted">Access symptom assessment, care recommendations, provider navigation, profile and care history.</p>
             </div>
             <button type="button" class="button primary full-width" data-portal-select="PATIENT">Continue as Patient / Member</button>
           </div>
-          <div class="card">
+          <div class="card portal-select-card portal-select-card--payer">
+            <span class="portal-select-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/></svg>
+            </span>
             <div class="card-header">
               <h2>Healthcare Manager / Payer Admin</h2>
               <p class="muted">Analyze emergency department utilization, identify priority members, review ML insights and coordinate interventions.</p>
@@ -48,8 +55,8 @@
          GET /api/auth/me confirms an existing session is invalid; app-shell
          stays hidden until a session is confirmed. -->
     <div id="auth-screen" class="role-hidden">
-      <div class="card" style="max-width: 420px; margin: 64px auto;">
-        <p style="margin: 0 0 16px 0;">
+      <div class="card auth-card">
+        <p class="auth-back-row">
           <button type="button" id="back-to-portal-select" class="text-button">&larr; Back to portal selection</button>
         </p>
         <div class="card-header">
@@ -98,7 +105,7 @@
     <div id="app-shell" class="role-hidden">
     <!-- Emergency Warning Strip -->
     <div class="safety-strip" role="region" aria-label="Emergency warning">
-      <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 3-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <svg class="icon-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       <span><strong>Medical Emergency Notice:</strong> If you are experiencing chest pain, severe shortness of breath, stroke symptoms, or loss of consciousness, call <strong>911</strong> or go to the nearest emergency room immediately.</span>
     </div>
 
@@ -110,7 +117,7 @@
         </button>
         <a class="brand" href="#triage" data-route="triage">
           <span class="brand-mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 11l18.5-9-9 18.5-2.2-7.3L3 11z"/></svg>
           </span>
           <span class="brand-text">Right<strong>Path</strong></span>
         </a>
@@ -141,6 +148,21 @@
 
       <!-- Main Content Area -->
       <main class="main-content">
+
+        <!-- PORTAL IDENTITY BANNER: always-visible, role-aware masthead so
+             "Patient Portal" / "Payer Portal" reads as a prominent part of
+             the main content header on every page, not a small topbar
+             label. Text is set by setRole() in app.js; purely presentational,
+             no routing/data behavior. -->
+        <div id="portal-banner" class="portal-banner" data-role="PATIENT">
+          <span id="portal-banner-icon" class="portal-banner-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </span>
+          <div>
+            <p id="portal-banner-kicker" class="portal-banner-kicker">Patient Portal</p>
+            <p id="portal-banner-tagline" class="portal-banner-tagline">Personalized Care Navigation</p>
+          </div>
+        </div>
 
         <!-- VIEW 1: PATIENT MY HEALTH & TRIAGE -->
         <section id="triage-view" class="view active">
@@ -488,24 +510,24 @@
           </div>
 
           <!-- 4-Step Primary Care Longitudinal Workflow Card -->
-          <div class="card workflow-card" style="margin-bottom: 24px; background: #f0f7f7; border-color: #bce3df;">
-            <h3 style="margin: 0 0 6px 0; color: var(--teal); font-size: 16px;">Primary Care Connection Workflow</h3>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 10px;">
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">1. Review</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Identify ED Utilization</p>
+          <div class="card workflow-card">
+            <h3 class="workflow-card-title">Primary Care Connection Workflow</h3>
+            <div class="workflow-steps-grid">
+              <div class="workflow-step">
+                <strong>1. Review</strong>
+                <p>Identify ED Utilization</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">2. Outreach</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Care Coordination Contact</p>
+              <div class="workflow-step">
+                <strong>2. Outreach</strong>
+                <p>Care Coordination Contact</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">3. PCP Connect</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Primary Care Link</p>
+              <div class="workflow-step">
+                <strong>3. PCP Connect</strong>
+                <p>Primary Care Link</p>
               </div>
-              <div style="background: #ffffff; padding: 10px; border-radius: var(--radius-sm); border: 1px solid var(--line);">
-                <strong style="color: var(--deep); font-size: 12px;">4. Follow Up</strong>
-                <p style="margin: 2px 0 0 0; font-size: 11.5px; color: var(--muted);">Longitudinal Care</p>
+              <div class="workflow-step">
+                <strong>4. Follow Up</strong>
+                <p>Longitudinal Care</p>
               </div>
             </div>
           </div>
